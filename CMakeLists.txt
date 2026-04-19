@@ -44,12 +44,20 @@ endif()
 include_directories(include)
 include_directories(third_party/whirlpool/include)
 
+# GoogleTest - MUST be added BEFORE any targets that use it
+# Disable GoogleTest's default installation to avoid warnings
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/googletest)
+
 # whirl-pool lock-free library
 add_subdirectory(third_party/whirlpool)
 
 # Subdirectories
 add_subdirectory(src)
-add_subdirectory(tests)
+
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 
 if(BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)

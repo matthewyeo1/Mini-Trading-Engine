@@ -24,8 +24,6 @@ add_library(velox_core STATIC
 target_link_libraries(velox_core 
     PUBLIC
         whirlpool    
-    PRIVATE
-        pthread
 )
 
 target_include_directories(velox_core PUBLIC 
