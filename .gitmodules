@@ -1,0 +1,3 @@
+[submodule "third_party/whirl-pool"]
+	path = third_party/whirl-pool
+	url = https://github.com/matthewyeo1/whirl-pool.git
