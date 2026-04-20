@@ -80,7 +80,7 @@ else()
     FetchContent_Declare(
         whirlpool
         GIT_REPOSITORY https://github.com/matthewyeo1/whirl-pool.git
-        GIT_TAG master
+        GIT_TAG main
     )
     FetchContent_MakeAvailable(whirlpool)
 endif()
