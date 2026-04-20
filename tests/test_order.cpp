@@ -3,9 +3,10 @@
 #include "velox/core/object_pool.hpp"
 
 using namespace velox;
+using namespace lockfree;
 
 TEST(OrderTest, BasicOrderLifecycle) {
-    lockfree::ObjectPool<Order, 1000> pool;
+    ObjectPool<Order, 1000> pool;
     
     auto order = pool.acquire();
     ASSERT_NE(order.get(), nullptr);
@@ -36,7 +37,7 @@ TEST(OrderTest, BasicOrderLifecycle) {
 }
 
 TEST(OrderTest, CancelOrder) {
-    lockfree::ObjectPool<Order, 1000> pool;
+    ObjectPool<Order, 1000> pool;
     
     auto order = pool.acquire();
     ASSERT_NE(order.get(), nullptr);
@@ -53,7 +54,7 @@ TEST(OrderTest, CancelOrder) {
 }
 
 TEST(OrderTest, ResetOrder) {
-    lockfree::ObjectPool<Order, 1000> pool;
+    ObjectPool<Order, 1000> pool;
     
     auto order = pool.acquire();
     ASSERT_NE(order.get(), nullptr);
@@ -81,7 +82,7 @@ TEST(OrderTest, ResetOrder) {
 }
 
 TEST(OrderTest, ObjectPoolReuse) {
-    lockfree::ObjectPool<Order, 10> pool;
+    ObjectPool<Order, 10> pool;
     
     auto order1 = pool.acquire();
     ASSERT_NE(order1.get(), nullptr);

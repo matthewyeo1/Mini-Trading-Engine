@@ -58,12 +58,32 @@ include_directories(third_party/whirlpool/include)
 
 # GoogleTest (must be added before any targets that use it)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-add_subdirectory(third_party/googletest)
+include(FetchContent)
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/googletest/CMakeLists.txt")
+    add_subdirectory(third_party/googletest)
+else()
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG release-1.12.1
+    )
+    FetchContent_MakeAvailable(googletest)
+endif()
 
 # Temporarily disable benchmarks for whirlpool only
 set(_SAVED_BUILD_BENCHMARKS ${BUILD_BENCHMARKS})
 set(BUILD_BENCHMARKS OFF)
-add_subdirectory(third_party/whirlpool)
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/whirlpool/CMakeLists.txt")
+    add_subdirectory(third_party/whirlpool)
+else()
+    # Fetch whirlpool if submodule not present (fallback)
+    FetchContent_Declare(
+        whirlpool
+        GIT_REPOSITORY https://github.com/matthewyeo1/whirl-pool.git
+        GIT_TAG main
+    )
+    FetchContent_MakeAvailable(whirlpool)
+endif()
 set(BUILD_BENCHMARKS ${_SAVED_BUILD_BENCHMARKS})
 
 # Subdirectories
