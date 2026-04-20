@@ -13,6 +13,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
     
     - name: Install dependencies
       run: |
@@ -34,6 +37,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
