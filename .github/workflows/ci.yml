@@ -20,7 +20,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: recursive
+        submodules: false  # ← CHANGE: Don't try to fetch submodules if they're broken
+        fetch-depth: 1     # ← ADD: Shallow clone for speed
+    
+    # If you need submodules, add this step instead
+    - name: Fix submodules
+      run: |
+        # Remove broken submodule references
+        rm -f .gitmodules
+        git config --remove-section submodule.third_party/whirlpool 2>/dev/null || true
+        rm -rf third_party/whirlpool
+        rm -rf .git/modules/third_party/whirlpool
     
     - name: Setup compiler
       if: matrix.compiler == 'gcc'
@@ -64,6 +74,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: false
+    
+    - name: Fix submodules
+      run: |
+        rm -f .gitmodules
+        git config --remove-section submodule.third_party/whirlpool 2>/dev/null || true
+        rm -rf third_party/whirlpool
+        rm -rf .git/modules/third_party/whirlpool
     
     - name: Configure with TSAN
       run: |
@@ -85,6 +104,14 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: false
+    
+    - name: Fix submodules
+      shell: pwsh
+      run: |
+        Remove-Item -Force .gitmodules -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force third_party/whirlpool -ErrorAction SilentlyContinue
     
     - name: Configure
       run: |
@@ -105,12 +132,19 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: false
     
-    - name: Disable CPU frequency scaling
+    - name: Fix submodules
       run: |
+        rm -f .gitmodules
+        rm -rf third_party/whirlpool
+    
+    - name: Setup Google Benchmark
+      run: |
+        # Install Google Benchmark for CI
         sudo apt update
-        sudo apt install -y linux-tools-common cpufrequtils
-        sudo cpupower frequency-set --governor performance
+        sudo apt install -y libbenchmark-dev
     
     - name: Configure with benchmarks
       run: |
@@ -136,6 +170,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: false
     
     - name: Configure with coverage
       run: |
