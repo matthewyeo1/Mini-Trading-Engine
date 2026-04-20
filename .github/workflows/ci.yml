@@ -14,8 +14,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: 'recursive'
+        submodules: 'false'
         fetch-depth: 0
+
+    - name: Init required submodules
+      run: |
+        git submodule sync --recursive || true
+        git submodule update --init third_party/whirlpool || true
+        git submodule update --init third_party/googletest || true
     
     - name: Install dependencies
       run: |
@@ -38,8 +44,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: 'recursive'
+        submodules: 'false'
         fetch-depth: 0
+
+    - name: Init required submodules
+      run: |
+        git submodule sync --recursive || true
+        git submodule update --init third_party/whirlpool || true
+        git submodule update --init third_party/googletest || true
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
