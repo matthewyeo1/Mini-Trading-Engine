@@ -20,22 +20,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: false  # ← CHANGE: Don't try to fetch submodules if they're broken
-        fetch-depth: 1     # ← ADD: Shallow clone for speed
+        submodules: false  # ← DON'T check submodules
+        fetch-depth: 1
     
-    # If you need submodules, add this step instead
-    - name: Fix submodules
+    # Download dependencies instead of using submodules
+    - name: Install dependencies
       run: |
-        # Remove broken submodule references
-        rm -f .gitmodules
-        git config --remove-section submodule.third_party/whirlpool 2>/dev/null || true
-        rm -rf third_party/whirlpool
-        rm -rf .git/modules/third_party/whirlpool
+        sudo apt update
+        sudo apt install -y libgtest-dev libbenchmark-dev
     
     - name: Setup compiler
       if: matrix.compiler == 'gcc'
       run: |
-        sudo apt update
         sudo apt install -y g++-11
         echo "CC=gcc-11" >> $GITHUB_ENV
         echo "CXX=g++-11" >> $GITHUB_ENV
@@ -43,7 +39,6 @@ jobs:
     - name: Setup Clang
       if: matrix.compiler == 'clang'
       run: |
-        sudo apt update
         sudo apt install -y clang-12
         echo "CC=clang-12" >> $GITHUB_ENV
         echo "CXX=clang++-12" >> $GITHUB_ENV
@@ -77,12 +72,10 @@ jobs:
       with:
         submodules: false
     
-    - name: Fix submodules
+    - name: Install dependencies
       run: |
-        rm -f .gitmodules
-        git config --remove-section submodule.third_party/whirlpool 2>/dev/null || true
-        rm -rf third_party/whirlpool
-        rm -rf .git/modules/third_party/whirlpool
+        sudo apt update
+        sudo apt install -y libgtest-dev
     
     - name: Configure with TSAN
       run: |
@@ -107,18 +100,21 @@ jobs:
       with:
         submodules: false
     
-    - name: Fix submodules
+    - name: Install vcpkg dependencies
       shell: pwsh
       run: |
-        Remove-Item -Force .gitmodules -ErrorAction SilentlyContinue
-        Remove-Item -Recurse -Force third_party/whirlpool -ErrorAction SilentlyContinue
+        # Install Google Test via vcpkg
+        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+        C:\vcpkg\bootstrap-vcpkg.bat
+        C:\vcpkg\vcpkg install gtest:x64-windows
     
     - name: Configure
       run: |
         cmake -B build_ci \
           -DBUILD_TESTS=ON \
           -DBUILD_BENCHMARKS=OFF \
-          -DCI_BUILD=ON
+          -DCI_BUILD=ON \
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
     
     - name: Build
       run: cmake --build build_ci --config Release --parallel
@@ -135,14 +131,8 @@ jobs:
       with:
         submodules: false
     
-    - name: Fix submodules
+    - name: Install dependencies
       run: |
-        rm -f .gitmodules
-        rm -rf third_party/whirlpool
-    
-    - name: Setup Google Benchmark
-      run: |
-        # Install Google Benchmark for CI
         sudo apt update
         sudo apt install -y libbenchmark-dev
     
@@ -173,6 +163,11 @@ jobs:
       with:
         submodules: false
     
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y libgtest-dev lcov
+    
     - name: Configure with coverage
       run: |
         cmake -B build_cov \
@@ -189,7 +184,6 @@ jobs:
     
     - name: Generate coverage report
       run: |
-        sudo apt install -y lcov
         lcov --capture --directory . --output-file coverage.info
         lcov --remove coverage.info '/usr/*' '*/tests/*' '*/third_party/*' --output-file coverage.info
         lcov --list coverage.info
