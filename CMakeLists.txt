@@ -13,6 +13,18 @@ option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 
+# Fetch Google Benchmark only if building benchmarks
+if(BUILD_BENCHMARKS)
+    include(FetchContent)
+    FetchContent_Declare(
+        benchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG v1.8.3
+    )
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(benchmark)
+endif()
+
 # Compiler specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion")
@@ -44,13 +56,15 @@ endif()
 include_directories(include)
 include_directories(third_party/whirlpool/include)
 
-# GoogleTest - MUST be added BEFORE any targets that use it
-# Disable GoogleTest's default installation to avoid warnings
+# GoogleTest (must be added before any targets that use it)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/googletest)
 
-# whirl-pool lock-free library
+# Temporarily disable benchmarks for whirlpool only
+set(_SAVED_BUILD_BENCHMARKS ${BUILD_BENCHMARKS})
+set(BUILD_BENCHMARKS OFF)
 add_subdirectory(third_party/whirlpool)
+set(BUILD_BENCHMARKS ${_SAVED_BUILD_BENCHMARKS})
 
 # Subdirectories
 add_subdirectory(src)

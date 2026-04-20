@@ -67,9 +67,7 @@ struct Order {
         status = (remaining_quantity == 0) ? OrderStatus::FILLED : OrderStatus::PARTIAL;
     }
     
-    void cancel() {
-        status = OrderStatus::CANCELLED;
-    }
+    void cancel() { status = OrderStatus::CANCELLED; }
     
     // Reset for pool reuse
     void reset() {

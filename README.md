@@ -98,8 +98,12 @@ mini-trading-engine/
 │   └── bench_book.cpp              # Order book update latency
 ├── tests/
 │   └── ...
-├── third_party/                    # Third-party directory containing whirlpool 
-│   └── whirlpool/                  # lock-free data structure library for core engine
+├── third_party/                    # Third-party directory containing submodules 
+│   ├── benchmark/                  # Google Benchmark library for performance testing
+|   |   └── ...
+│   ├── googletest/                 # Google Test framework for unit testing
+|   |   └── ...
+│   └── whirlpool/                  # Lock-free data structure library for core engine
 |       └── ...
 ├── tools/
 │   └── itch_replay.cpp             # Replay recorded NASDAQ ITCH 5.0 data
@@ -120,31 +124,23 @@ mini-trading-engine/
 ### Build
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-
-# With benchmarks
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON
-cmake --build build --parallel
+# With tests and benchmarks
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+cmake -B build -DBUILD_BENCHMARKS=ON -DBUILD_TESTS=ON
+cmake --build build --config Release
 ```
 
 ### Run Tests
 
 ```bash
-./build/tests/velox_tests
+./build/tests/Release/velox_tests.exe
 ```
 
 ### Run Benchmarks
 
 ```bash
-# Disable CPU frequency scaling first
-sudo cpupower frequency-set --governor performance
-
-./build/benchmarks/bench_primitives
-./build/benchmarks/bench_pipeline
+./build/benchmarks/Release/bench_order.exe  
 ```
-
----
 
 ## Performance
 
