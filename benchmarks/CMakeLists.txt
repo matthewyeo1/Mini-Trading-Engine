@@ -1,6 +1,16 @@
+# Order class
 add_executable(bench_order bench_order.cpp)
 
 target_link_libraries(bench_order 
+    velox_core 
+    whirlpool     
+    benchmark::benchmark
+)
+
+# Price level
+add_executable(bench_price_level bench_price_level.cpp)
+
+target_link_libraries(bench_price_level
     velox_core 
     whirlpool     
     benchmark::benchmark
