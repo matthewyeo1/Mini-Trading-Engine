@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstdint>
 #include "velox/matching/order.hpp"
 
 namespace velox {
@@ -18,6 +19,7 @@ public:
     uint32_t total_quantity() const { return m_total_quantity.load(std::memory_order_acquire); }
     bool empty() const { return m_head == nullptr; }
     Order* head() const { return m_head; }
+    Order* tail() const { return m_tail; } 
     
     // For hash map
     int64_t key() const { return m_price; }
