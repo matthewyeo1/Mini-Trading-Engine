@@ -7,8 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  linux-build:
+    name: Linux Build
     runs-on: ubuntu-latest
     
     steps:
@@ -16,12 +16,6 @@ jobs:
       with:
         submodules: 'false'
         fetch-depth: 0
-
-    - name: Init required submodules
-      run: |
-        git submodule sync --recursive || true
-        git submodule update --init third_party/whirlpool || true
-        git submodule update --init third_party/googletest || true
     
     - name: Install dependencies
       run: |
@@ -46,12 +40,6 @@ jobs:
       with:
         submodules: 'false'
         fetch-depth: 0
-
-    - name: Init required submodules
-      run: |
-        git submodule sync --recursive || true
-        git submodule update --init third_party/whirlpool || true
-        git submodule update --init third_party/googletest || true
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
