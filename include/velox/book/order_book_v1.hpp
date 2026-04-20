@@ -1,8 +1,9 @@
 // include/velox/book/order_book.hpp
 #pragma once
 #include <atomic>
-#include <cstring>
+#include <cstdint>
 #include <vector>
+#include <cstring>
 #include "velox/matching/order.hpp"
 #include "velox/book/price_level.hpp"
 
@@ -48,4 +49,4 @@ private:
     void update_depth();
 };
 
-} // namespace velox
+}

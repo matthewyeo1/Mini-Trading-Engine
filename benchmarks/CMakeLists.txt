@@ -1,25 +1,25 @@
 # Order class
 add_executable(bench_order bench_order.cpp)
-
-target_link_libraries(bench_order 
-    velox_core 
-    whirlpool     
-    benchmark::benchmark
-)
-
-# Price level
 add_executable(bench_price_level bench_price_level.cpp)
+add_executable(bench_order_book bench_order_book.cpp)
 
-target_link_libraries(bench_price_level
-    velox_core 
-    whirlpool     
-    benchmark::benchmark
-)
-
-target_include_directories(bench_order PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
-)
+# Link libraries for each
+foreach(bench_target bench_order bench_price_level bench_order_book)
+    target_link_libraries(${bench_target} 
+        velox_core 
+        benchmark::benchmark
+    )
+    target_include_directories(${bench_target} PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
+    )
+    if(WIN32)
+        target_link_libraries(${bench_target} ws2_32 shlwapi)
+    endif()
+    set_target_properties(${bench_target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/benchmarks/Release"
+    )
+endforeach()
 
 # Windows specific
 if(WIN32)

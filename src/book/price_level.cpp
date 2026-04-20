@@ -7,17 +7,17 @@ PriceLevel::PriceLevel(int64_t price) : m_price(price) {}
 
 void PriceLevel::add_order(Order* order) {
     if (!order) return;
-    
-    order->prev = nullptr;
-    order->next = m_head;
-    
-    if (m_head) {
-        m_head->prev = order;
+
+    order->next = nullptr;
+    order->prev = m_tail;
+
+    if (m_tail) {
+        m_tail->next = order;
     } else {
-        m_tail = order;
+        m_head = order;  // first order
     }
-    m_head = order;
-    
+    m_tail = order;
+
     m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_release);
 }
 

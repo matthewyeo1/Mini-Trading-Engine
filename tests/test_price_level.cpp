@@ -45,12 +45,12 @@ TEST_F(PriceLevelTest, AddMultipleOrders) {
     level.add_order(order1.get());
     level.add_order(order2.get());
     
-    // LIFO order - second should be at head
+    // FIFO order
     EXPECT_EQ(level.total_quantity(), 80);
-    EXPECT_EQ(level.head(), order2.get());
-    EXPECT_EQ(level.tail(), order1.get());
-    EXPECT_EQ(order2->next, order1.get());
-    EXPECT_EQ(order1->prev, order2.get());
+    EXPECT_EQ(level.head(), order1.get());
+    EXPECT_EQ(level.tail(), order2.get());
+    EXPECT_EQ(order1->next, order2.get());
+    EXPECT_EQ(order2->prev, order1.get());
 }
 
 TEST_F(PriceLevelTest, RemoveOrder) {
@@ -132,12 +132,12 @@ TEST_F(PriceLevelTest, MatchOrderPartialFill) {
     auto remaining = level.match_order(sell.get());
     
     // buy2 (30) should be fully filled, buy1 (50) should have 20 left
-    EXPECT_EQ(buy2->remaining_quantity, 0);
-    EXPECT_EQ(buy1->remaining_quantity, 20);
+    EXPECT_EQ(buy1->remaining_quantity, 0);
+    EXPECT_EQ(buy2->remaining_quantity, 20);
     EXPECT_EQ(sell->remaining_quantity, 0);
     EXPECT_EQ(remaining, nullptr);
     EXPECT_EQ(level.total_quantity(), 20);
-    EXPECT_EQ(level.head(), buy1.get());
+    EXPECT_EQ(level.head(), buy2.get());
 }
 
 TEST_F(PriceLevelTest, MatchOrderNotEnoughLiquidity) {

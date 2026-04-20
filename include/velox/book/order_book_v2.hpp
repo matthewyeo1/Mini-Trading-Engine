@@ -1,10 +1,11 @@
-// include/velox/book/order_book.hpp
 #pragma once
 #include <atomic>
-#include <cstring>
-#include <vector>
+#include <cstdint>
+#include <map>
+#include <unordered_map>
 #include "velox/matching/order.hpp"
 #include "velox/book/price_level.hpp"
+#include "lockfree/hashmap.hpp"
 
 namespace velox {
 
@@ -24,28 +25,44 @@ public:
     uint32_t bid_depth() const { return m_bid_depth.load(std::memory_order_acquire); }
     uint32_t ask_depth() const { return m_ask_depth.load(std::memory_order_acquire); }
     uint64_t sequence() const { return m_sequence.load(std::memory_order_acquire); }
-    
+
     // Statistics
     size_t bid_levels() const { return m_bid_levels.size(); }
     size_t ask_levels() const { return m_ask_levels.size(); }
     
 private:
     char m_symbol[8];
-    std::atomic<uint64_t> m_sequence{0};
     std::atomic<int64_t> m_best_bid{0};
     std::atomic<int64_t> m_best_ask{INT64_MAX};
     std::atomic<uint32_t> m_bid_depth{0};
     std::atomic<uint32_t> m_ask_depth{0};
+    std::atomic<uint64_t> m_sequence{0};
     
-    // Price levels (using simple vectors for now - can be optimized later)
-    std::vector<PriceLevel*> m_bid_levels;  // Sorted high to low
-    std::vector<PriceLevel*> m_ask_levels;  // Sorted low to high
+    // Price levels (hashmap for O(1) access, sorted map for best price tracking)
+    static constexpr size_t MAX_LEVELS = 1000;
+    std::map<int64_t, PriceLevel*, std::greater<int64_t>> m_bid_levels;
+    std::map<int64_t, PriceLevel*> m_ask_levels;
+
+    // Order ID to price mapping
+    struct OrderLocation {
+        int64_t price;
+        bool is_bid;
+        Order* order_ptr = nullptr;
+    };
+    std::unordered_map<uint64_t, OrderLocation> m_order_index;
+
+    size_t m_bid_count = 0;
+    size_t m_ask_count = 0;
     
-    PriceLevel* find_level(int64_t price, bool is_bid);
-    void insert_level(PriceLevel* level, bool is_bid);
-    void remove_level(PriceLevel* level, bool is_bid);
     void update_best_prices();
+
+    PriceLevel* find_level(int64_t price, bool is_bid);
+
+    void insert_level(PriceLevel* level, bool is_bid);
+
+    void remove_level(PriceLevel* level, bool is_bid);
+
     void update_depth();
 };
 
-} // namespace velox
+} 
