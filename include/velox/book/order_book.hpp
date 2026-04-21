@@ -1,8 +1,8 @@
-// include/velox/book/order_book.hpp
 #pragma once
 #include <atomic>
 #include <cstring>
 #include <vector>
+#include <unordered_map>
 #include "velox/matching/order.hpp"
 #include "velox/book/price_level.hpp"
 
@@ -40,6 +40,18 @@ private:
     // Price levels (using simple vectors for now - can be optimized later)
     std::vector<PriceLevel*> m_bid_levels;  // Sorted high to low
     std::vector<PriceLevel*> m_ask_levels;  // Sorted low to high
+
+    // Order ID to location mapping for O(1) cancellation
+    struct OrderLocation {
+        int64_t price;
+        bool is_bid;
+        Order* order_ptr;
+    };
+
+    std::unordered_map<uint64_t, OrderLocation> m_order_index;
+
+    // O(1) price → level mapping for quick access during matching
+    std::unordered_map<int64_t, PriceLevel*> m_price_to_level;
     
     PriceLevel* find_level(int64_t price, bool is_bid);
     void insert_level(PriceLevel* level, bool is_bid);
@@ -48,4 +60,4 @@ private:
     void update_depth();
 };
 
-} // namespace velox
+}

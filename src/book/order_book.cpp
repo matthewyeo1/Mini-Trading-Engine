@@ -10,13 +10,7 @@ OrderBook::OrderBook(const char* symbol) {
 }
 
 OrderBook::~OrderBook() {
-    // Clean up all price levels
-    for (auto* level : m_bid_levels) {
-        delete level;
-    }
-    for (auto* level : m_ask_levels) {
-        delete level;
-    }
+    for (auto& [price, level] : m_price_to_level) delete level;
 }
 
 bool OrderBook::add_order(Order* order) {
@@ -34,6 +28,9 @@ bool OrderBook::add_order(Order* order) {
     
     // Add order to the level
     level->add_order(order);
+
+    // Index order for O(1) cancellation
+    m_order_index[order->order_id] = {price, is_bid, order};
     
     // Update depth and sequence
     if (is_bid) {
@@ -49,10 +46,46 @@ bool OrderBook::add_order(Order* order) {
 }
 
 bool OrderBook::cancel_order(uint64_t order_id) {
-    // TODO: Implement order cancellation
-    // Need to track orders by ID for O(1) cancellation
-    (void)order_id;
-    return false;
+    // O(1) hashmap lookup
+    auto it = m_order_index.find(order_id);
+    if (it == m_order_index.end()) {
+        return false;
+    }
+    
+    auto& loc = it->second;
+    PriceLevel* level = find_level(loc.price, loc.is_bid);
+    
+    if (!level) {
+        m_order_index.erase(it);
+        return false;
+    }
+    
+    // Remove from level
+    level->remove_order(loc.order_ptr);
+    
+    // Update depth
+    if (loc.is_bid) {
+        m_bid_depth.fetch_sub(loc.order_ptr->remaining_quantity, std::memory_order_release);
+    } else {
+        m_ask_depth.fetch_sub(loc.order_ptr->remaining_quantity, std::memory_order_release);
+    }
+    
+    // Mark as cancelled
+    loc.order_ptr->cancel();
+    
+    // Remove level if empty
+    if (level->empty()) {
+        remove_level(level, loc.is_bid);
+        delete level;
+    }
+    
+    // Remove from index
+    m_order_index.erase(it);
+    
+    update_best_prices();
+    m_sequence.fetch_add(1, std::memory_order_release);
+    
+    return true;
 }
 
 Order* OrderBook::match(Order* incoming_order) {
@@ -76,6 +109,7 @@ Order* OrderBook::match(Order* incoming_order) {
         else        m_bid_depth.fetch_sub(before - after, std::memory_order_release);
 
         if (level->empty()) {
+            m_price_to_level.erase(level->price());
             levels.erase(levels.begin());
             delete level;
         }
@@ -100,31 +134,30 @@ Order* OrderBook::match(Order* incoming_order) {
 }
 
 PriceLevel* OrderBook::find_level(int64_t price, bool is_bid) {
-    std::vector<PriceLevel*>& levels = is_bid ? m_bid_levels : m_ask_levels;
-    
-    for (auto* level : levels) {
-        if (level->price() == price) {
-            return level;
-        }
-    }
-    return nullptr;
+    (void)is_bid;  
+    auto it = m_price_to_level.find(price);
+    return it != m_price_to_level.end() ? it->second : nullptr;
 }
 
 void OrderBook::insert_level(PriceLevel* level, bool is_bid) {
+    m_price_to_level[level->price()] = level;
+
     std::vector<PriceLevel*>& levels = is_bid ? m_bid_levels : m_ask_levels;
     
-    // Find insertion position (bids: high to low, asks: low to high)
-    size_t pos = 0;
-    while (pos < levels.size()) {
-        if (is_bid && levels[pos]->price() < level->price()) break;
-        if (!is_bid && levels[pos]->price() > level->price()) break;
-        pos++;
-    }
-    
-    levels.insert(levels.begin() + pos, level);
+    // Insert while maintaining sorted order (O(logn))
+    auto it = std::lower_bound(
+        levels.begin(), levels.end(), level->price(),
+        [is_bid](PriceLevel* existing, int64_t price) {
+            return is_bid ? existing->price() > price   // bids: high→low
+                          : existing->price() < price;  // asks: low→high
+        });
+
+    levels.insert(it, level);
 }
 
 void OrderBook::remove_level(PriceLevel* level, bool is_bid) {
+    m_price_to_level.erase(level->price());
+
     std::vector<PriceLevel*>& levels = is_bid ? m_bid_levels : m_ask_levels;
     
     auto it = std::find(levels.begin(), levels.end(), level);
@@ -161,4 +194,4 @@ void OrderBook::update_depth() {
     m_ask_depth.store(ask_depth, std::memory_order_release);
 }
 
-} // namespace velox
+}

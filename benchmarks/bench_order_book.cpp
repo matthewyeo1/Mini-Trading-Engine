@@ -95,6 +95,7 @@ static void BM_OrderBook_MatchBuy(benchmark::State& state) {
 
     for (auto _ : state) {
         state.PauseTiming();
+        std::vector<Handle> owned;
         OrderBook book("AAPL");
         for (auto* s : sells) {
             reset_order(s, 100);
@@ -169,6 +170,7 @@ static void BM_OrderBook_Cancel(benchmark::State& state) {
 
     for (auto _ : state) {
         state.PauseTiming();
+        std::vector<Handle> owned;  // Destruct each iteration
         OrderBook book("AAPL");
         Order* order = make_order(pool, owned, 1, OrderSide::BUY, 10000, 100);
         book.add_order(order);
