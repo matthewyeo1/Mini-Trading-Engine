@@ -77,3 +77,5 @@ Order* PriceLevel::match_order(Order* incoming_order) {
     // Return remaining incoming order if not fully filled
     return (incoming_order->remaining_quantity > 0) ? incoming_order : nullptr;
 }
+
+}
