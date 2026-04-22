@@ -15,7 +15,7 @@ public:
 
     // Core operations
     void add_order(Order* order);
-    void remove_order(Order* order);        // lazy cancel
+    void remove_order(Order* order);        
     Order* match_order(Order* incoming);
 
     // Getters
@@ -23,8 +23,10 @@ public:
     uint32_t total_quantity() const { return m_total_quantity; }
     bool empty() const { return m_size == 0; }
 
+    // Buffer operations
     Order* head() const;
     Order* tail() const;
+    void advance();
 
 private:
     int64_t m_price;

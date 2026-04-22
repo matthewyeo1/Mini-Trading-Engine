@@ -23,15 +23,23 @@ void PriceLevel::add_order(Order* order) {
 void PriceLevel::remove_order(Order* order) {
     if (!order || !order->is_active()) return;
 
-    // TODO: implement lazy deletion
     order->cancel();
     m_total_quantity -= order->remaining_quantity;
+
+    // Only scan if the cancelled order is blocking execution
+    if (m_head != m_tail && m_buffer[m_head] == order) {
+        advance();
+    }
 }
 
 Order* PriceLevel::match_order(Order* incoming) {
     if (!incoming) return nullptr;
 
-    while (m_head != m_tail && incoming->remaining_quantity > 0) {
+    while (incoming->remaining_quantity > 0) {
+
+        advance();
+
+        if (m_head == m_tail) break;
 
         Order* current = m_buffer[m_head];
 
@@ -76,6 +84,21 @@ Order* PriceLevel::head() const {
 Order* PriceLevel::tail() const {
     if (m_head == m_tail) return nullptr;
     return m_buffer[(m_tail - 1) & MASK];
+}
+
+void PriceLevel::advance() {
+    while (m_head != m_tail) {
+        Order* order = m_buffer[m_head];
+
+        if (order && order->is_active() && order->remaining_quantity > 0) {
+            return;
+        }
+
+        // Clean dead slot
+        m_buffer[m_head] = nullptr;
+        m_head = next(m_head);
+        m_size--;
+    }
 }
 
 }
