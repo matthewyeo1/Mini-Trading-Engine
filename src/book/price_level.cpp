@@ -4,98 +4,78 @@
 namespace velox {
 
 PriceLevel::PriceLevel(int64_t price)
-    : m_price(price) {}
+    : m_price(price), m_head(0), m_tail(0),
+      m_total_quantity(0), m_size(0)
+{
+    m_buffer.fill(nullptr);
+}
 
 void PriceLevel::add_order(Order* order) {
     if (!order || order->remaining_quantity == 0) return;
 
-    order->next = nullptr;
-    order->prev = nullptr;
-
-    if (m_tail) {
-        m_tail->next = order;
-    } else {
-        m_head = order;
-    }
-
-    m_tail = order;
+    m_buffer[m_tail] = order;
+    m_tail = next(m_tail);
 
     m_size++;
-    m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_relaxed);
+    m_total_quantity += order->remaining_quantity;
 }
 
 void PriceLevel::remove_order(Order* order) {
-    if (!order) return;
+    if (!order || !order->is_active()) return;
 
-    if (!order->is_active()) return;
-
+    // TODO: implement lazy deletion
     order->cancel();
-
-    m_total_quantity.fetch_sub(order->remaining_quantity,
-                               std::memory_order_relaxed);
+    m_total_quantity -= order->remaining_quantity;
 }
 
 Order* PriceLevel::match_order(Order* incoming) {
     if (!incoming) return nullptr;
 
-    Order* current = m_head;
-    Order* last_valid = nullptr;
+    while (m_head != m_tail && incoming->remaining_quantity > 0) {
 
-    while (current && incoming->remaining_quantity > 0) {
+        Order* current = m_buffer[m_head];
 
-        // Skip cancelled or empty nodes
-        if (!current->is_active() || current->remaining_quantity == 0) {
-            current = current->next;
+        // Skip null or inactive (lazy deletion)
+        if (!current || !current->is_active() || current->remaining_quantity == 0) {
+            m_buffer[m_head] = nullptr;
+            m_head = next(m_head);
             continue;
         }
 
         uint32_t fill = std::min(current->remaining_quantity,
-                                  incoming->remaining_quantity);
+                                incoming->remaining_quantity);
 
-        if (fill > 0) {
-            current->remaining_quantity -= fill;
-            incoming->remaining_quantity -= fill;
+        // Apply fill
+        current->remaining_quantity -= fill;
+        incoming->remaining_quantity -= fill;
 
-            current->filled_quantity += fill;
-            incoming->filled_quantity += fill;
+        current->filled_quantity += fill;
+        incoming->filled_quantity += fill;
 
-            m_total_quantity.fetch_sub(fill, std::memory_order_relaxed);
-        }
+        m_total_quantity -= fill;
 
+        // If maker fully filled → pop from FIFO
         if (current->remaining_quantity == 0) {
-            Order* next = current->next;
-
-            if (current->prev) {
-                current->prev->next = current->next;
-            } else {
-                m_head = current->next;
-            }
-
-            if (current->next) {
-                current->next->prev = current->prev;
-            } else {
-                m_tail = current->prev;
-            }
-
-            current->next = nullptr;
-            current->prev = nullptr;
-
+            m_buffer[m_head] = nullptr;
+            m_head = next(m_head);
             m_size--;
-
-            current = next;
-            continue;
         }
 
-        last_valid = current;
-        current = current->next;
-    }
-
-    // clean head pointer if it drifted onto inactive nodes
-    while (m_head && (!m_head->is_active() || m_head->remaining_quantity == 0)) {
-        m_head = m_head->next;
+        if (incoming->remaining_quantity == 0)
+            break;
     }
 
     return (incoming->remaining_quantity > 0) ? incoming : nullptr;
+}
+
+Order* PriceLevel::head() const {
+    if (m_head == m_tail) return nullptr;
+    return m_buffer[m_head];
+}
+
+Order* PriceLevel::tail() const {
+    if (m_head == m_tail) return nullptr;
+    return m_buffer[(m_tail - 1) & MASK];
 }
 
 }
