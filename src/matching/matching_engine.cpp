@@ -57,10 +57,16 @@ void MatchingEngine::process_order(Order* order) {
         m_partial_count++;
     }
 
-    // If fully filled, order is done
-    if (order->is_filled()) {
-
+    // Finalize order state AFTER matching
+    if (order->remaining_quantity == 0) {
+        order->status = OrderStatus::FILLED;
     } 
+    else if (order->filled_quantity > 0) {
+        order->status = OrderStatus::PARTIAL;
+    } 
+    else {
+        order->status = OrderStatus::NEW;
+    }
 }
 
 void MatchingEngine::send_fill(Order* order, uint32_t fill_quantity, int64_t fill_price) {

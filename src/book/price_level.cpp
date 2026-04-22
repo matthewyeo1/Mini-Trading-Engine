@@ -3,79 +3,79 @@
 
 namespace velox {
 
-PriceLevel::PriceLevel(int64_t price) : m_price(price) {}
+PriceLevel::PriceLevel(int64_t price)
+    : m_price(price), m_head(0), m_tail(0),
+      m_total_quantity(0), m_size(0)
+{
+    m_buffer.fill(nullptr);
+}
 
 void PriceLevel::add_order(Order* order) {
-    if (!order) return;
+    if (!order || order->remaining_quantity == 0) return;
 
-    order->next = nullptr;
-    order->prev = m_tail;
+    m_buffer[m_tail] = order;
+    m_tail = next(m_tail);
 
-    if (m_tail) {
-        m_tail->next = order;
-    } else {
-        m_head = order;  // first order
-    }
-    m_tail = order;
-
-    m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_release);
+    m_size++;
+    m_total_quantity += order->remaining_quantity;
 }
 
 void PriceLevel::remove_order(Order* order) {
-    if (!order) return;
+    if (!order || !order->is_active()) return;
 
-    // Remove order from linked list
-    if (order->prev) {
-        order->prev->next = order->next;
-    } else {
-        m_head = order->next;
-    }
-    
-    if (order->next) {
-        order->next->prev = order->prev;
-    } else {
-        m_tail = order->prev;
-    }
-    
-    m_total_quantity.fetch_sub(order->remaining_quantity, std::memory_order_release);
-
-    // Clear order pointers for safety
-    order->prev = nullptr;
-    order->next = nullptr;
+    // TODO: implement lazy deletion
+    order->cancel();
+    m_total_quantity -= order->remaining_quantity;
 }
 
-Order* PriceLevel::match_order(Order* incoming_order) {
-    if (!incoming_order || incoming_order->remaining_quantity == 0) {
-        return nullptr;
+Order* PriceLevel::match_order(Order* incoming) {
+    if (!incoming) return nullptr;
+
+    while (m_head != m_tail && incoming->remaining_quantity > 0) {
+
+        Order* current = m_buffer[m_head];
+
+        // Skip null or inactive (lazy deletion)
+        if (!current || !current->is_active() || current->remaining_quantity == 0) {
+            m_buffer[m_head] = nullptr;
+            m_head = next(m_head);
+            continue;
+        }
+
+        uint32_t fill = std::min(current->remaining_quantity,
+                                incoming->remaining_quantity);
+
+        // Apply fill
+        current->remaining_quantity -= fill;
+        incoming->remaining_quantity -= fill;
+
+        current->filled_quantity += fill;
+        incoming->filled_quantity += fill;
+
+        m_total_quantity -= fill;
+
+        // If maker fully filled → pop from FIFO
+        if (current->remaining_quantity == 0) {
+            m_buffer[m_head] = nullptr;
+            m_head = next(m_head);
+            m_size--;
+        }
+
+        if (incoming->remaining_quantity == 0)
+            break;
     }
 
-    Order* current = m_head;
-    
-    while (current && incoming_order->remaining_quantity > 0) {
-        uint32_t fill_qty = std::min(current->remaining_quantity, 
-                                      incoming_order->remaining_quantity);
-        
-        if (fill_qty > 0) {
-            current->fill(fill_qty);
-            incoming_order->fill(fill_qty);
-            // Decrease total quantity by the amount filled
-            m_total_quantity.fetch_sub(fill_qty, std::memory_order_release);
-            
-            // Check if current order is fully filled for removal
-            if (current->is_filled()) {
-                Order* next = current->next;
-                remove_order(current);
-                current = next;
-            } else {
-                current = current->next;
-            }
-        } else {
-            current = current->next;
-        }
-    }
-    
-    // Return remaining incoming order if not fully filled
-    return (incoming_order->remaining_quantity > 0) ? incoming_order : nullptr;
+    return (incoming->remaining_quantity > 0) ? incoming : nullptr;
+}
+
+Order* PriceLevel::head() const {
+    if (m_head == m_tail) return nullptr;
+    return m_buffer[m_head];
+}
+
+Order* PriceLevel::tail() const {
+    if (m_head == m_tail) return nullptr;
+    return m_buffer[(m_tail - 1) & MASK];
 }
 
 }
