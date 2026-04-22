@@ -2,9 +2,14 @@
 add_executable(bench_order bench_order.cpp)
 add_executable(bench_price_level bench_price_level.cpp)
 add_executable(bench_order_book bench_order_book.cpp)
+add_executable(bench_matching_engine bench_matching_engine.cpp)
 
 # Link libraries for each
-foreach(bench_target bench_order bench_price_level bench_order_book)
+foreach(bench_target 
+        bench_order 
+        bench_price_level 
+        bench_order_book
+        bench_matching_engine)
     target_link_libraries(${bench_target} 
         velox_core 
         benchmark::benchmark
