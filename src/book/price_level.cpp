@@ -3,79 +3,87 @@
 
 namespace velox {
 
-PriceLevel::PriceLevel(int64_t price) : m_price(price) {}
+PriceLevel::PriceLevel(int64_t price)
+    : m_price(price) {}
 
 void PriceLevel::add_order(Order* order) {
-    if (!order) return;
+    if (!order || order->remaining_quantity == 0) return;
 
     order->next = nullptr;
-    order->prev = m_tail;
+    order->prev = nullptr;
 
-    if (m_tail) {
-        m_tail->next = order;
+    if (!m_tail) {
+        m_head = m_tail = order;
     } else {
-        m_head = order;  // first order
+        m_tail->next = order;
+        order->prev = m_tail;
+        m_tail = order;
     }
-    m_tail = order;
 
-    m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_release);
+    m_size++;
+    m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_relaxed);
 }
 
 void PriceLevel::remove_order(Order* order) {
     if (!order) return;
 
-    // Remove order from linked list
     if (order->prev) {
         order->prev->next = order->next;
     } else {
         m_head = order->next;
     }
-    
+
     if (order->next) {
         order->next->prev = order->prev;
     } else {
         m_tail = order->prev;
     }
-    
-    m_total_quantity.fetch_sub(order->remaining_quantity, std::memory_order_release);
 
-    // Clear order pointers for safety
-    order->prev = nullptr;
     order->next = nullptr;
+    order->prev = nullptr;
+
+    m_total_quantity.fetch_sub(order->remaining_quantity,
+                               std::memory_order_relaxed);
 }
 
-Order* PriceLevel::match_order(Order* incoming_order) {
-    if (!incoming_order || incoming_order->remaining_quantity == 0) {
-        return nullptr;
-    }
+Order* PriceLevel::match_order(Order* incoming) {
+    if (!incoming) return nullptr;
 
     Order* current = m_head;
-    
-    while (current && incoming_order->remaining_quantity > 0) {
-        uint32_t fill_qty = std::min(current->remaining_quantity, 
-                                      incoming_order->remaining_quantity);
-        
-        if (fill_qty > 0) {
-            current->fill(fill_qty);
-            incoming_order->fill(fill_qty);
-            // Decrease total quantity by the amount filled
-            m_total_quantity.fetch_sub(fill_qty, std::memory_order_release);
-            
-            // Check if current order is fully filled for removal
-            if (current->is_filled()) {
-                Order* next = current->next;
-                remove_order(current);
-                current = next;
-            } else {
-                current = current->next;
-            }
-        } else {
+
+    while (current && incoming->remaining_quantity > 0) {
+
+        uint32_t fill = std::min(current->remaining_quantity,
+                                  incoming->remaining_quantity);
+
+        if (fill == 0) {
             current = current->next;
+            continue;
+        }
+
+        // Apply fills symmetrically
+        current->remaining_quantity -= fill;
+        incoming->remaining_quantity -= fill;
+
+        current->filled_quantity += fill;
+        incoming->filled_quantity += fill;
+
+        m_total_quantity.fetch_sub(fill, std::memory_order_relaxed);
+
+        // Remove fully filled maker
+        if (current->remaining_quantity == 0) {
+            Order* next = current->next;
+            remove_order(current);
+            current = next;
+        }
+
+        // Stop if incoming is done
+        if (incoming->remaining_quantity == 0) {
+            break;
         }
     }
-    
-    // Return remaining incoming order if not fully filled
-    return (incoming_order->remaining_quantity > 0) ? incoming_order : nullptr;
+
+    return (incoming->remaining_quantity > 0) ? incoming : nullptr;
 }
 
 }
