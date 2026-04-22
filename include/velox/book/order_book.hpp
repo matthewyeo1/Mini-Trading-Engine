@@ -30,12 +30,16 @@ public:
     size_t ask_levels() const { return m_ask_levels.size(); }
     
 private:
-    char m_symbol[8];
-    std::atomic<uint64_t> m_sequence{0};
-    std::atomic<int64_t> m_best_bid{0};
-    std::atomic<int64_t> m_best_ask{INT64_MAX};
-    std::atomic<uint32_t> m_bid_depth{0};
-    std::atomic<uint32_t> m_ask_depth{0};
+
+    // Stock ticker size
+    char m_symbol[8]; 
+
+    // Order book state (keep atomic binding for multithreading of each symbol)
+    alignas(64) std::atomic<uint64_t> m_sequence{0};
+    alignas(64) std::atomic<int64_t> m_best_bid{0};
+    alignas(64) std::atomic<int64_t> m_best_ask{INT64_MAX};
+    alignas(64) std::atomic<uint32_t> m_bid_depth{0};
+    alignas(64) std::atomic<uint32_t> m_ask_depth{0};
     
     // Price levels (using simple vectors for now - can be optimized later)
     std::vector<PriceLevel*> m_bid_levels;  // Sorted high to low

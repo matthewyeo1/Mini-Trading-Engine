@@ -27,6 +27,9 @@ public:
     
     // Send order to exchange (simulated)
     bool send_order(const Order* order);
+
+    // Send report from matching engine
+    bool send_report(const ExecutionReport& report);
     
     // Cancel order
     bool cancel_order(uint64_t order_id);
