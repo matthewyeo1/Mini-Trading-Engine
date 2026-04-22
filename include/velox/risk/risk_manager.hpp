@@ -23,6 +23,12 @@ public:
     void activate_circuit_breaker();
     void reset_circuit_breaker();
     
+    // Hash symbol
+    uint32_t hash_symbol(const char* symbol) const;
+
+    // Update position
+    void update_position(const Order* order, uint32_t fill_quantity);
+
 private:
     struct Position {
         std::atomic<uint32_t> long_position{0};
@@ -30,11 +36,9 @@ private:
         uint32_t limit = 100000;  // Default limit
     };
     
-    // Simplified - would be hash map in production
+    // Fixed-size array for good cache locality
     Position m_positions[256];
     std::atomic<bool> m_circuit_breaker{false};
-    
-    uint32_t hash_symbol(const char* symbol) const;
 };
 
 } 
