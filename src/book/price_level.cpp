@@ -12,13 +12,13 @@ void PriceLevel::add_order(Order* order) {
     order->next = nullptr;
     order->prev = nullptr;
 
-    if (!m_tail) {
-        m_head = m_tail = order;
-    } else {
+    if (m_tail) {
         m_tail->next = order;
-        order->prev = m_tail;
-        m_tail = order;
+    } else {
+        m_head = order;
     }
+
+    m_tail = order;
 
     m_size++;
     m_total_quantity.fetch_add(order->remaining_quantity, std::memory_order_relaxed);
@@ -27,20 +27,9 @@ void PriceLevel::add_order(Order* order) {
 void PriceLevel::remove_order(Order* order) {
     if (!order) return;
 
-    if (order->prev) {
-        order->prev->next = order->next;
-    } else {
-        m_head = order->next;
-    }
+    if (!order->is_active()) return;
 
-    if (order->next) {
-        order->next->prev = order->prev;
-    } else {
-        m_tail = order->prev;
-    }
-
-    order->next = nullptr;
-    order->prev = nullptr;
+    order->cancel();
 
     m_total_quantity.fetch_sub(order->remaining_quantity,
                                std::memory_order_relaxed);
@@ -50,37 +39,60 @@ Order* PriceLevel::match_order(Order* incoming) {
     if (!incoming) return nullptr;
 
     Order* current = m_head;
+    Order* last_valid = nullptr;
 
     while (current && incoming->remaining_quantity > 0) {
 
-        uint32_t fill = std::min(current->remaining_quantity,
-                                  incoming->remaining_quantity);
-
-        if (fill == 0) {
+        // Skip cancelled or empty nodes
+        if (!current->is_active() || current->remaining_quantity == 0) {
             current = current->next;
             continue;
         }
 
-        // Apply fills symmetrically
-        current->remaining_quantity -= fill;
-        incoming->remaining_quantity -= fill;
+        uint32_t fill = std::min(current->remaining_quantity,
+                                  incoming->remaining_quantity);
 
-        current->filled_quantity += fill;
-        incoming->filled_quantity += fill;
+        if (fill > 0) {
+            current->remaining_quantity -= fill;
+            incoming->remaining_quantity -= fill;
 
-        m_total_quantity.fetch_sub(fill, std::memory_order_relaxed);
+            current->filled_quantity += fill;
+            incoming->filled_quantity += fill;
 
-        // Remove fully filled maker
+            m_total_quantity.fetch_sub(fill, std::memory_order_relaxed);
+        }
+
         if (current->remaining_quantity == 0) {
             Order* next = current->next;
-            remove_order(current);
+
+            if (current->prev) {
+                current->prev->next = current->next;
+            } else {
+                m_head = current->next;
+            }
+
+            if (current->next) {
+                current->next->prev = current->prev;
+            } else {
+                m_tail = current->prev;
+            }
+
+            current->next = nullptr;
+            current->prev = nullptr;
+
+            m_size--;
+
             current = next;
+            continue;
         }
 
-        // Stop if incoming is done
-        if (incoming->remaining_quantity == 0) {
-            break;
-        }
+        last_valid = current;
+        current = current->next;
+    }
+
+    // clean head pointer if it drifted onto inactive nodes
+    while (m_head && (!m_head->is_active() || m_head->remaining_quantity == 0)) {
+        m_head = m_head->next;
     }
 
     return (incoming->remaining_quantity > 0) ? incoming : nullptr;
