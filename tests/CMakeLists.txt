@@ -4,6 +4,7 @@ add_executable(velox_tests
     test_price_level.cpp
     test_order_book.cpp
     test_matching_engine.cpp
+    test_risk_manager.cpp
     #test_spsc_queue.cpp
     #test_ring_buffer.cpp
     #test_mpmc_queue.cpp
