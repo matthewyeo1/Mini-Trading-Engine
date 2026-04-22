@@ -6,6 +6,7 @@ add_executable(velox_tests
     test_matching_engine.cpp
     test_risk_manager.cpp
     test_execution_gateway.cpp
+    test_feed_handler.cpp
 )
 
 target_link_libraries(velox_tests 
