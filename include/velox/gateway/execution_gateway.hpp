@@ -1,8 +1,10 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <vector>
 #include "velox/matching/order.hpp"
 #include "lockfree/spsc_queue.hpp"
+#include "lockfree/pool.hpp"
 
 namespace velox {
 
@@ -26,28 +28,42 @@ public:
     ~ExecutionGateway();
     
     // Send order to exchange (simulated)
-    bool send_order(const Order* order);
+    bool send_order(const Order* order, int worker_id = -1);
 
     // Send report from matching engine
-    bool send_report(const ExecutionReport& report);
+    bool send_report(const ExecutionReport& report, int worker_id = -1);
     
     // Cancel order
     bool cancel_order(uint64_t order_id);
     
     // Receive execution reports (consumer thread)
-    ExecutionReport* receive_report();
+    ExecutionReport* receive_report(int worker_id);
+
+    // Add worker queue
+    void add_worker();
     
-    // Statistics
-    uint64_t orders_sent() const { return m_orders_sent.load(); }
-    uint64_t orders_acked() const { return m_orders_acked.load(); }
+    // Stats
+    uint64_t total_reports_sent() const { return m_total_reports.load(); }
+    uint64_t total_orders_sent() const { return m_total_orders.load(); }
+    size_t worker_count() const { return m_worker_queues.size(); }
     
 private:
-    std::atomic<uint64_t> m_orders_sent{0};
-    std::atomic<uint64_t> m_orders_acked{0};
-    ReportQueue m_reports;
+    // 1:1 queue to worker ratio
+    std::vector<std::unique_ptr<ReportQueue>> m_worker_queues;
+
+    // Reusable memory pool for reports
+    lockfree::ObjectPool<ExecutionReport, 65536> m_report_pool;
+    std::vector<lockfree::PooledPtr<ExecutionReport, 65536>> m_pending_reports;
+
+    // Stats
+    std::atomic<uint64_t> m_total_reports{0};
+    std::atomic<uint64_t> m_total_orders{0};
+    
+    // Round-robin counter for worker selection
+    std::atomic<int> m_next_worker{0};
     
     // Simulated exchange connection
-    void simulate_exchange_response(const Order* order);
+    void simulate_exchange_response(const ExecutionReport& report);
 };
 
 }
