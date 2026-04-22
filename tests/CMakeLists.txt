@@ -3,13 +3,13 @@ add_executable(velox_tests
     test_order.cpp
     test_price_level.cpp
     test_order_book.cpp
+    test_matching_engine.cpp
     #test_spsc_queue.cpp
     #test_ring_buffer.cpp
     #test_mpmc_queue.cpp
     #test_treiber_stack.cpp
     #test_object_pool.cpp
     #test_hashmap.cpp
-    #test_matching_engine.cpp
 )
 
 target_link_libraries(velox_tests 

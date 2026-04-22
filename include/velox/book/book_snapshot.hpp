@@ -29,7 +29,7 @@ private:
         std::atomic<SnapshotNode*> next;
     };
     
-    std::atomic<SnapshotNode*> m_current;
+    std::atomic<SnapshotNode*> current;
 };
 
 }
