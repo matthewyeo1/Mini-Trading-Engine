@@ -23,6 +23,9 @@ public:
     
     // Reset for testing
     void reset();
+
+    // Hash symbol
+    uint32_t hash_symbol(const char* symbol) const;
     
 private:
     struct Position {
@@ -35,8 +38,6 @@ private:
     
     Position m_positions[256];
     std::atomic<int64_t> m_total_realized_pnl{0};
-    
-    uint32_t hash_symbol(const char* symbol) const;
     void update_average_price(Position& pos, uint32_t quantity, int64_t price);
 };
 
