@@ -11,6 +11,19 @@ using namespace velox;
 using Pool = lockfree::ObjectPool<Order, 200000>;
 using Handle = lockfree::PooledPtr<Order, 200000>;
 
+static ExecutionGateway::ReportPool* g_gateway_pool = nullptr;
+
+static void setup_gateway_pool() {
+    if (!g_gateway_pool) {
+        g_gateway_pool = new ExecutionGateway::ReportPool();
+    }
+}
+
+static void cleanup_gateway_pool() {
+    delete g_gateway_pool;
+    g_gateway_pool = nullptr;
+}
+
 static Order* make_order(Pool& pool,
                         std::vector<Handle>& owned,
                         uint64_t id,
@@ -39,6 +52,8 @@ static void reset_order(Order* o, uint32_t qty) {
 // Case 1: No I/O cost gateway; pure matching latency
 class NullGateway : public ExecutionGateway {
 public:
+    NullGateway(ExecutionGateway::ReportPool* pool) : ExecutionGateway(pool) {}
+
     bool send_report(const ExecutionReport& report, int worker_id = -1) {
         (void)report;
         (void)worker_id;
@@ -55,7 +70,7 @@ public:
 // Case 2: Actual gateway with queues
 class RealGateway : public ExecutionGateway {
 public:
-    RealGateway() {
+    RealGateway(ExecutionGateway::ReportPool* pool) : ExecutionGateway(pool) {
         add_worker();
         add_worker();
     }
@@ -91,9 +106,11 @@ static void BM_OrderBook_MatchOnly(benchmark::State& state) {
 BENCHMARK(BM_OrderBook_MatchOnly);
 
 static void BM_MatchingEngine_NoRisk_NoGateway(benchmark::State& state) {
+    setup_gateway_pool();
+
     Pool pool;
     std::vector<Handle> owned;
-    NullGateway gateway;
+    NullGateway gateway(g_gateway_pool);
     MatchingEngine engine("AAPL", nullptr, &gateway);
 
     const int N = state.range(0);
@@ -113,14 +130,18 @@ static void BM_MatchingEngine_NoRisk_NoGateway(benchmark::State& state) {
         engine.run_match_cycle();
         benchmark::DoNotOptimize(engine);
     }
+
+    cleanup_gateway_pool();
 }
 BENCHMARK(BM_MatchingEngine_NoRisk_NoGateway)->Arg(10)->Arg(100)->Arg(500)->Arg(1000);
 
 static void BM_MatchingEngine_WithRisk_NoGateway(benchmark::State& state) {
+    setup_gateway_pool();
+
     Pool pool;
     std::vector<Handle> owned;
     RiskManager risk;
-    NullGateway gateway;
+    NullGateway gateway(g_gateway_pool);
     MatchingEngine engine("AAPL", &risk, &gateway);
 
     const int N = state.range(0);
@@ -140,13 +161,17 @@ static void BM_MatchingEngine_WithRisk_NoGateway(benchmark::State& state) {
         engine.run_match_cycle();
         benchmark::DoNotOptimize(engine);
     }
+
+    cleanup_gateway_pool();
 }
 BENCHMARK(BM_MatchingEngine_WithRisk_NoGateway)->Arg(10)->Arg(100)->Arg(500)->Arg(1000);
 
 static void BM_MatchingEngine_NoRisk_RealGateway(benchmark::State& state) {
+    setup_gateway_pool();
+
     Pool pool;
     std::vector<Handle> owned;
-    RealGateway gateway;
+    RealGateway gateway(g_gateway_pool);
     MatchingEngine engine("AAPL", nullptr, &gateway);
 
     const int N = state.range(0);
@@ -166,14 +191,18 @@ static void BM_MatchingEngine_NoRisk_RealGateway(benchmark::State& state) {
         engine.run_match_cycle();
         benchmark::DoNotOptimize(engine);
     }
+
+    cleanup_gateway_pool();
 }
 BENCHMARK(BM_MatchingEngine_NoRisk_RealGateway)->Arg(10)->Arg(100)->Arg(500)->Arg(1000);
 
 static void BM_MatchingEngine_FullPipeline(benchmark::State& state) {
+    setup_gateway_pool();
+
     Pool pool;
     std::vector<Handle> owned;
     RiskManager risk;
-    RealGateway gateway;
+    RealGateway gateway(g_gateway_pool);
     MatchingEngine engine("AAPL", &risk, &gateway);
 
     const int N = state.range(0);
@@ -193,14 +222,18 @@ static void BM_MatchingEngine_FullPipeline(benchmark::State& state) {
         engine.run_match_cycle();
         benchmark::DoNotOptimize(engine);
     }
+
+    cleanup_gateway_pool();
 }
 BENCHMARK(BM_MatchingEngine_FullPipeline)->Arg(10)->Arg(100)->Arg(500)->Arg(1000);
 
 static void BM_MatchingEngine_Throughput(benchmark::State& state) {
+    setup_gateway_pool();
+
     Pool pool;
     std::vector<Handle> owned;
     RiskManager risk;
-    RealGateway gateway;
+    RealGateway gateway(g_gateway_pool);
     MatchingEngine engine("AAPL", &risk, &gateway);
 
     const int N = 1000;
@@ -221,6 +254,8 @@ static void BM_MatchingEngine_Throughput(benchmark::State& state) {
     }
 
     state.SetItemsProcessed(state.iterations() * N);
+    
+    cleanup_gateway_pool();
 }
 BENCHMARK(BM_MatchingEngine_Throughput);
 

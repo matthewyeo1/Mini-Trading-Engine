@@ -3,8 +3,17 @@
 
 namespace velox {
 
-ExecutionGateway::ExecutionGateway() = default;
-ExecutionGateway::~ExecutionGateway() = default;
+ExecutionGateway::ExecutionGateway() 
+    : m_report_pool(new ReportPool()), m_owns_pool(true) {}
+
+ExecutionGateway::ExecutionGateway(ReportPool* pool) 
+    : m_report_pool(pool), m_owns_pool(false) {}
+
+ExecutionGateway::~ExecutionGateway() {
+    if (m_owns_pool) {
+        delete m_report_pool;
+    }
+}
 
 void ExecutionGateway::add_worker() {
     m_worker_queues.push_back(std::make_unique<ReportQueue>());
@@ -30,9 +39,7 @@ bool ExecutionGateway::send_order(const Order* order, int worker_id) {
 }
 
 bool ExecutionGateway::send_report(const ExecutionReport& report, int worker_id) {
-    if (m_worker_queues.empty()) {
-        return false;  
-    }
+    if (m_worker_queues.empty()) return false;  
 
     // Select worker
     if (worker_id < 0) {
@@ -44,7 +51,7 @@ bool ExecutionGateway::send_report(const ExecutionReport& report, int worker_id)
     }
 
     // Acquire report from pool
-    auto report_ptr = m_report_pool.acquire();
+    auto report_ptr = m_report_pool->acquire();
     ExecutionReport* out = report_ptr.get();
 
     // Copy data
@@ -58,9 +65,6 @@ bool ExecutionGateway::send_report(const ExecutionReport& report, int worker_id)
     out->reject_reason = report.reject_reason;
     std::strncpy(out->symbol, report.symbol, 7);
     out->symbol[7] = '\0';
-    
-    // Store for lifecycle management
-    m_pending_reports.push_back(std::move(report_ptr));
     
     // Push to worker's queue
     bool success = m_worker_queues[worker_id]->push(out);

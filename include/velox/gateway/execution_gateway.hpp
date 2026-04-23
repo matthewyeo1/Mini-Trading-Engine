@@ -22,9 +22,15 @@ struct ExecutionReport {
 
 class ExecutionGateway {
 public:
-    using ReportQueue = lockfree::SPSCQueue<ExecutionReport*, 65536>;
+    using ReportPool = lockfree::ObjectPool<ExecutionReport, 65536>;
+    using ReportQueue = lockfree::SPSCQueue<ExecutionReport*, 4096>;
     
+    // Default constructor (creates its own pool)
     ExecutionGateway();
+    
+    // Constructor with external pool
+    explicit ExecutionGateway(ReportPool* pool);
+    
     ~ExecutionGateway();
     
     // Send order to exchange (simulated)
@@ -52,8 +58,8 @@ private:
     std::vector<std::unique_ptr<ReportQueue>> m_worker_queues;
 
     // Reusable memory pool for reports
-    lockfree::ObjectPool<ExecutionReport, 65536> m_report_pool;
-    std::vector<lockfree::PooledPtr<ExecutionReport, 65536>> m_pending_reports;
+    ReportPool* m_report_pool;
+    bool m_owns_pool = false;
 
     // Stats
     std::atomic<uint64_t> m_total_reports{0};
