@@ -250,7 +250,6 @@ TEST_F(FeedHandlerTest, MultipleCallbacks) {
     EXPECT_EQ(callback_count, 2);
 }
 
-// Test that uses a real ITCH file (if available)
 TEST_F(FeedHandlerTest, ProcessRealFile) {
     // This test will be skipped if the file doesn't exist
     const std::string filename = "test_data/NASDAQ_ITCH50_sample.bin";
@@ -272,7 +271,6 @@ TEST_F(FeedHandlerTest, ProcessRealFile) {
     EXPECT_GT(handler->message_count(), 0);
 }
 
-// Integration test with actual order book
 TEST_F(FeedHandlerTest, IntegrationWithOrderBook) {
     // Create a simple order book
     OrderBook book("AAPL");
