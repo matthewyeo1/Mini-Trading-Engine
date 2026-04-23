@@ -31,8 +31,8 @@ public:
 
 private:
     struct Position {
-        std::atomic<uint32_t> long_position{0};
-        std::atomic<uint32_t> short_position{0};
+        alignas(64) std::atomic<uint32_t> long_position{0};
+        alignas(64) std::atomic<uint32_t> short_position{0};
         uint32_t limit = 100000;  // Default limit
     };
     

@@ -1,7 +1,6 @@
 add_library(velox_core STATIC
     # Feed handlers
     feed/feed_handler.cpp
-    feed/decoder.cpp
     
     # Order book
     book/order_book.cpp

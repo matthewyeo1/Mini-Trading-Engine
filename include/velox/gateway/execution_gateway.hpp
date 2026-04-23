@@ -62,11 +62,11 @@ private:
     bool m_owns_pool = false;
 
     // Stats
-    std::atomic<uint64_t> m_total_reports{0};
-    std::atomic<uint64_t> m_total_orders{0};
+    alignas(64) std::atomic<uint64_t> m_total_reports{0};
+    alignas(64) std::atomic<uint64_t> m_total_orders{0};
     
     // Round-robin counter for worker selection
-    std::atomic<int> m_next_worker{0};
+    alignas(64) std::atomic<int> m_next_worker{0};
     
     // Simulated exchange connection
     void simulate_exchange_response(const ExecutionReport& report);
