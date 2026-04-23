@@ -6,12 +6,14 @@ using namespace velox;
 class ExecutionGatewayTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        gateway = std::make_unique<ExecutionGateway>();
+        pool = std::make_unique<ExecutionGateway::ReportPool>();
+        gateway = std::make_unique<ExecutionGateway>(pool.get());
         // Add 2 workers (simulating 2 CPU cores)
         gateway->add_worker();
         gateway->add_worker();
     }
     
+    std::unique_ptr<ExecutionGateway::ReportPool> pool;
     std::unique_ptr<ExecutionGateway> gateway;
 };
 
