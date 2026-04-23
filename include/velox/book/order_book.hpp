@@ -17,6 +17,8 @@ public:
     bool add_order(Order* order);
     bool cancel_order(uint64_t order_id);
     Order* match(Order* incoming_order);
+    const std::vector<PriceLevel*>& get_bid_levels() const { return m_bid_levels; }
+    const std::vector<PriceLevel*>& get_ask_levels() const { return m_ask_levels; }
     
     // Market data
     int64_t best_bid() const { return m_best_bid.load(std::memory_order_acquire); }
@@ -25,10 +27,13 @@ public:
     uint32_t ask_depth() const { return m_ask_depth.load(std::memory_order_acquire); }
     uint64_t sequence() const { return m_sequence.load(std::memory_order_acquire); }
     
-    // Statistics
+    // Stats
     size_t bid_levels() const { return m_bid_levels.size(); }
     size_t ask_levels() const { return m_ask_levels.size(); }
-    
+
+    // Symbol
+    const char* symbol() const { return m_symbol; }
+
 private:
 
     // Stock ticker size

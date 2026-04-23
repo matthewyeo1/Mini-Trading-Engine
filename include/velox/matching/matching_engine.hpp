@@ -43,10 +43,10 @@ private:
 
     OrderQueue m_incoming_orders;
 
-    std::atomic<uint64_t> m_match_count{0};
-    std::atomic<uint64_t> m_reject_count{0};
-    std::atomic<uint64_t> m_partial_count{0};
-    std::atomic<uint64_t> m_total_latency{0};
+    alignas(64) std::atomic<uint64_t> m_match_count{0};
+    alignas(64) std::atomic<uint64_t> m_reject_count{0};
+    alignas(64) std::atomic<uint64_t> m_partial_count{0};
+    alignas(64) std::atomic<uint64_t> m_total_latency{0};
     
     void process_order(Order* order);
     void send_fill(Order* order, uint32_t fill_quantity, int64_t fill_price);
