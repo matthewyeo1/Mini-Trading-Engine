@@ -1,0 +1,1 @@
+add_executable(create_itch create_itch.cpp)
