@@ -111,7 +111,7 @@ static void BM_MatchingEngine_NoRisk_NoGateway(benchmark::State& state) {
     Pool pool;
     std::vector<Handle> owned;
     NullGateway gateway(g_gateway_pool);
-    MatchingEngine engine("AAPL", nullptr, &gateway);
+    MatchingEngine engine("AAPL", nullptr, &gateway, nullptr);
 
     const int N = state.range(0);
     std::vector<Order*> orders;
@@ -142,7 +142,7 @@ static void BM_MatchingEngine_WithRisk_NoGateway(benchmark::State& state) {
     std::vector<Handle> owned;
     RiskManager risk;
     NullGateway gateway(g_gateway_pool);
-    MatchingEngine engine("AAPL", &risk, &gateway);
+    MatchingEngine engine("AAPL", &risk, &gateway, nullptr);
 
     const int N = state.range(0);
     std::vector<Order*> orders;
@@ -172,7 +172,7 @@ static void BM_MatchingEngine_NoRisk_RealGateway(benchmark::State& state) {
     Pool pool;
     std::vector<Handle> owned;
     RealGateway gateway(g_gateway_pool);
-    MatchingEngine engine("AAPL", nullptr, &gateway);
+    MatchingEngine engine("AAPL", nullptr, &gateway, nullptr);
 
     const int N = state.range(0);
     std::vector<Order*> orders;
@@ -203,7 +203,7 @@ static void BM_MatchingEngine_FullPipeline(benchmark::State& state) {
     std::vector<Handle> owned;
     RiskManager risk;
     RealGateway gateway(g_gateway_pool);
-    MatchingEngine engine("AAPL", &risk, &gateway);
+    MatchingEngine engine("AAPL", &risk, &gateway, nullptr);
 
     const int N = state.range(0);
     std::vector<Order*> orders;
@@ -234,7 +234,7 @@ static void BM_MatchingEngine_Throughput(benchmark::State& state) {
     std::vector<Handle> owned;
     RiskManager risk;
     RealGateway gateway(g_gateway_pool);
-    MatchingEngine engine("AAPL", &risk, &gateway);
+    MatchingEngine engine("AAPL", &risk, &gateway, nullptr);
 
     const int N = 1000;
     std::vector<Order*> orders;

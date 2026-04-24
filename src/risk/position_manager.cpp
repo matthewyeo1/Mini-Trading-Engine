@@ -1,77 +1,90 @@
 #include "velox/risk/position_manager.hpp"
 #include <cstring>
+#include <cmath>
 
 namespace velox {
 
 PositionManager::PositionManager() = default;
 PositionManager::~PositionManager() = default;
 
-void PositionManager::update_position(const Order* order, uint32_t fill_quantity) {
-    if (!order) return;
+void PositionManager::update_position(const Order* order, uint32_t fill_quantity, int64_t fill_price) {
+    if (!order || fill_quantity == 0) return;
     
-    uint32_t idx = hash_symbol(order->symbol);
-    auto& pos = m_positions[idx];
-    
+    std::string symbol(order->symbol);
+
+    // Create default position if symbol doesn't exist in system
+    auto& pos = m_positions[symbol];
+
     if (order->is_buy()) {
-        int64_t new_pos = pos.net_position.load() + static_cast<int64_t>(fill_quantity);
-        pos.net_position.store(new_pos, std::memory_order_release);
-        pos.total_bought.fetch_add(fill_quantity, std::memory_order_release);
-        update_average_price(pos, fill_quantity, order->price);
-    } else {
-        int64_t new_pos = pos.net_position.load() - static_cast<int64_t>(fill_quantity);
-        pos.net_position.store(new_pos, std::memory_order_release);
+        // Buy: increase position, update average entry price
+        int64_t old_position = pos.net_position.load(std::memory_order_acquire);
+        int64_t old_avg = pos.avg_entry_price.load(std::memory_order_acquire);
+        uint64_t old_bought = pos.total_bought.load(std::memory_order_acquire);
+        
+        int64_t new_position = old_position + fill_quantity;
+        uint64_t new_bought = old_bought + fill_quantity;
+        
+        // Weighted average price
+        int64_t new_avg = (old_avg * old_bought + fill_price * fill_quantity) / new_bought;
+        
+        pos.net_position.store(new_position, std::memory_order_release);
+        pos.avg_entry_price.store(new_avg, std::memory_order_release);
+        pos.total_bought.store(new_bought, std::memory_order_release);
+    }
+    else {
+        // Sell: decrease position, realize P&L
+        int64_t old_position = pos.net_position.load(std::memory_order_acquire);
+        int64_t old_avg = pos.avg_entry_price.load(std::memory_order_acquire);
+        
+        // Realized P&L = (sell_price - avg_price) * quantity
+        int64_t pnl = (fill_price - old_avg) * fill_quantity;
+        update_realized_pnl(pos, pnl);
+        
+        int64_t new_position = old_position - fill_quantity;
+        pos.net_position.store(new_position, std::memory_order_release);
         pos.total_sold.fetch_add(fill_quantity, std::memory_order_release);
     }
 }
 
+void PositionManager::update_realized_pnl(Position& pos, int64_t pnl) {
+    pos.realized_pnl.fetch_add(pnl, std::memory_order_release);
+}
+
 int64_t PositionManager::get_position(const char* symbol) const {
-    uint32_t idx = hash_symbol(symbol);
-    return m_positions[idx].net_position.load(std::memory_order_acquire);
+    auto it = m_positions.find(symbol);
+    if (it == m_positions.end()) return 0;
+    return it->second.net_position.load(std::memory_order_acquire);
 }
 
-void PositionManager::record_fill(const Order* order, uint32_t fill_quantity, int64_t fill_price) {
-    update_position(order, fill_quantity);
-    // TODO: Calculate P&L
+int64_t PositionManager::get_realized_pnl(const char* symbol) const {
+    auto it = m_positions.find(symbol);
+    if (it == m_positions.end()) return 0;
+    return it->second.realized_pnl.load(std::memory_order_acquire);
 }
 
-int64_t PositionManager::get_realized_pnl() const {
-    return m_total_realized_pnl.load(std::memory_order_acquire);
+int64_t PositionManager::get_unrealized_pnl(const char* symbol, int64_t current_price) const {
+    auto it = m_positions.find(symbol);
+    if (it == m_positions.end()) return 0;
+    
+    int64_t position = it->second.net_position.load(std::memory_order_acquire);
+    if (position == 0) return 0;
+    
+    int64_t avg_price = it->second.avg_entry_price.load(std::memory_order_acquire);
+    if (position > 0) {
+        // Long position: (current - avg) * position
+        return (current_price - avg_price) * position;
+    } else {
+        // Short position: (avg - current) * (-position)
+        return (avg_price - current_price) * (-position);
+    }
 }
 
-int64_t PositionManager::get_unrealized_pnl(int64_t current_price) const {
-    // TODO: Calculate unrealized P&L based on positions
-    return 0;
+int64_t PositionManager::get_total_pnl(const char* symbol, int64_t current_price) const {
+    return get_realized_pnl(symbol) + get_unrealized_pnl(symbol, current_price);
 }
 
 void PositionManager::reset() {
-    for (auto& pos : m_positions) {
-        pos.net_position.store(0, std::memory_order_release);
-        pos.realized_pnl.store(0, std::memory_order_release);
-        pos.avg_entry_price.store(0, std::memory_order_release);
-        pos.total_bought.store(0, std::memory_order_release);
-        pos.total_sold.store(0, std::memory_order_release);
-    }
-    m_total_realized_pnl.store(0, std::memory_order_release);
-}
-
-uint32_t PositionManager::hash_symbol(const char* symbol) const {
-    uint32_t hash = 0;
-    while (*symbol) {
-        hash = hash * 31 + static_cast<uint32_t>(*symbol++);
-    }
-    return hash % 256;
-}
-
-void PositionManager::update_average_price(Position& pos, uint32_t quantity, int64_t price) {
-    int64_t total_bought = pos.total_bought.load();
-    int64_t old_avg = pos.avg_entry_price.load();
-    
-    if (total_bought == 0) {
-        pos.avg_entry_price.store(price, std::memory_order_release);
-    } else {
-        int64_t new_avg = (old_avg * total_bought + price * quantity) / (total_bought + quantity);
-        pos.avg_entry_price.store(new_avg, std::memory_order_release);
-    }
+    m_positions.clear();
 }
 
 }
