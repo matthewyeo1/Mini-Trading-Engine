@@ -5,10 +5,6 @@
 
 using namespace velox;
 
-// ============================================================================
-// Gateway Benchmarks (Pool created once, reused across iterations)
-// ============================================================================
-
 // Create a shared pool for all benchmarks
 static ExecutionGateway::ReportPool* g_pool = nullptr;
 
@@ -23,7 +19,6 @@ static void cleanup_pool() {
     g_pool = nullptr;
 }
 
-// Benchmark: Add Worker (Gateway created each iteration, but pool is shared)
 static void BM_Gateway_AddWorker(benchmark::State& state) {
     setup_pool();
     for (auto _ : state) {
@@ -35,7 +30,6 @@ static void BM_Gateway_AddWorker(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_AddWorker);
 
-// Benchmark: Send Report (Single Worker)
 static void BM_Gateway_SendReport(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -63,7 +57,6 @@ static void BM_Gateway_SendReport(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_SendReport);
 
-// Benchmark: Send Report (Round-Robin)
 static void BM_Gateway_SendReport_RoundRobin(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -90,7 +83,6 @@ static void BM_Gateway_SendReport_RoundRobin(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_SendReport_RoundRobin);
 
-// Benchmark: Receive Report
 static void BM_Gateway_ReceiveReport(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -119,7 +111,6 @@ static void BM_Gateway_ReceiveReport(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_ReceiveReport);
 
-// Benchmark: Send Order (Converts to Report)
 static void BM_Gateway_SendOrder(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -146,7 +137,6 @@ static void BM_Gateway_SendOrder(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_SendOrder);
 
-// Benchmark: Cancel Order
 static void BM_Gateway_CancelOrder(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -159,7 +149,6 @@ static void BM_Gateway_CancelOrder(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_CancelOrder);
 
-// Benchmark: Multiple Reports to Different Workers
 static void BM_Gateway_MultipleReports(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -189,7 +178,6 @@ static void BM_Gateway_MultipleReports(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_MultipleReports);
 
-// Benchmark: Pipeline (Send 100 reports, then receive all)
 static void BM_Gateway_Pipeline(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
@@ -228,7 +216,6 @@ static void BM_Gateway_Pipeline(benchmark::State& state) {
 }
 BENCHMARK(BM_Gateway_Pipeline);
 
-// Benchmark: Contended Worker (All reports to worker 0)
 static void BM_Gateway_ContendedWorker(benchmark::State& state) {
     setup_pool();
     ExecutionGateway gateway(g_pool);
