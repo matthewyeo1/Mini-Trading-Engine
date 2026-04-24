@@ -12,7 +12,7 @@ protected:
         pool = std::make_unique<lockfree::ObjectPool<Order, 10000>>();
         risk = std::make_unique<RiskManager>();
         gateway = std::make_unique<ExecutionGateway>();
-        engine = std::make_unique<MatchingEngine>("AAPL", risk.get(), gateway.get());
+        engine = std::make_unique<MatchingEngine>("AAPL", risk.get(), gateway.get(), nullptr);
     }
     
     Order* create_order(uint64_t id, OrderSide side, int64_t price, uint32_t qty) {

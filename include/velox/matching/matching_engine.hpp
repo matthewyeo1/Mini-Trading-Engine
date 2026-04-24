@@ -1,11 +1,12 @@
 #pragma once
 #include <atomic>
 #include "velox/book/order_book.hpp"
-#include "velox/matching/order.hpp"
 #include "lockfree/spsc_queue.hpp"
 #include "lockfree/pool.hpp"
 #include "velox/risk/risk_manager.hpp"
 #include "velox/gateway/execution_gateway.hpp"
+#include "velox/risk/position_manager.hpp"
+#include "velox/matching/order.hpp"
 
 namespace velox {
 
@@ -15,7 +16,8 @@ public:
     
     MatchingEngine(const char* symbol,
                    RiskManager* risk_manager,
-                   ExecutionGateway* gateway);
+                   ExecutionGateway* gateway,
+                   PositionManager* position_manager);
 
     ~MatchingEngine();
     
@@ -40,6 +42,7 @@ private:
     OrderBook m_order_book;
     RiskManager* m_risk_manager;
     ExecutionGateway* m_gateway;
+    PositionManager* m_position_manager;
 
     OrderQueue m_incoming_orders;
 

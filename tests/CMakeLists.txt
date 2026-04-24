@@ -8,6 +8,7 @@ add_executable(velox_tests
     test_execution_gateway.cpp
     test_feed_handler.cpp
     test_book_snapshot.cpp
+    test_position_manager.cpp
 )
 
 target_link_libraries(velox_tests 

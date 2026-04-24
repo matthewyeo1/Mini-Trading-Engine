@@ -5,10 +5,12 @@ namespace velox {
 
 MatchingEngine::MatchingEngine(const char* symbol,
                                RiskManager* risk_manager,
-                               ExecutionGateway* gateway)
+                               ExecutionGateway* gateway,
+                               PositionManager* positiion_manager)
     : m_order_book(symbol),
       m_risk_manager(risk_manager),
-      m_gateway(gateway) {}
+      m_gateway(gateway),
+      m_position_manager(positiion_manager) {}
 
 MatchingEngine::~MatchingEngine() = default;
 
@@ -73,7 +75,14 @@ void MatchingEngine::send_fill(Order* order, uint32_t fill_quantity, int64_t fil
     (void)fill_quantity;
     (void)fill_price;
 
-    m_gateway->send_order(order);
+    if (m_gateway) {
+        m_gateway->send_order(order);
+    }
+
+    // Update position manager
+    if (m_position_manager) {
+        m_position_manager->update_position(order, fill_quantity, fill_price);
+    }
 }
 
 bool MatchingEngine::check_risk(const Order* order) const {
