@@ -19,7 +19,7 @@ public:
             auto ask = create_order(1000 + i, OrderSide::SELL, 10100 + i * 10, 100);
             book->add_order(ask);
         }
-        manager = std::make_unique<BookSnapshotManager>(5);  // capture top 5 levels
+        manager = std::make_unique<BookSnapshotManager>(5);  // Capture top 5 levels
         manager->update(*book);
     }
 
@@ -54,7 +54,7 @@ BENCHMARK(BM_Snapshot_Update);
 
 static void BM_Snapshot_Get(benchmark::State& state) {
     BookSnapshotBench bench;
-    bench.manager->update(*bench.book);  // initial snapshot
+    bench.manager->update(*bench.book);  // Initial snapshot
     for (auto _ : state) {
         const BookSnapshot* snap = bench.manager->get_snapshot();
         benchmark::DoNotOptimize(snap);
@@ -120,7 +120,7 @@ static void BM_Snapshot_Concurrent(benchmark::State& state) {
         auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::high_resolution_clock::now() - start) < std::chrono::milliseconds(10)) {
-            // spin – wait for the time window to expire
+            // Spin – wait for the time window to expire
         }
         uint64_t after = total_ops.load(std::memory_order_relaxed);
         state.SetIterationTime(0.01); // 10 ms

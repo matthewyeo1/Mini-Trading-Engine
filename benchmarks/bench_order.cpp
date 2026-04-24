@@ -3,11 +3,9 @@
 #include "lockfree/pool.hpp"
 
 using namespace velox;
-using namespace lockfree;
-using namespace benchmark;
 
-static void BM_OrderAcquireFill(State& state) {
-    ObjectPool<Order, 100000> pool;
+static void BM_OrderAcquireFill(benchmark::State& state) {
+    lockfree::ObjectPool<Order, 100000> pool;
     
     for (auto _ : state) {
         auto order = pool.acquire();
@@ -15,30 +13,30 @@ static void BM_OrderAcquireFill(State& state) {
         order->quantity = 100;
         order->remaining_quantity = 100;
         order->fill(50);
-        DoNotOptimize(order);
+        benchmark::DoNotOptimize(order);
     }
 }
 BENCHMARK(BM_OrderAcquireFill);
 
-static void BM_OrderCreateOnly(State& state) {
-    ObjectPool<Order, 100000> pool;
+static void BM_OrderCreateOnly(benchmark::State& state) {
+    lockfree::ObjectPool<Order, 100000> pool;
     
     for (auto _ : state) {
         auto order = pool.acquire();
-        DoNotOptimize(order);
+        benchmark::DoNotOptimize(order);
     }
 }
 BENCHMARK(BM_OrderCreateOnly);
 
-static void BM_OrderFillOnly(State& state) {
-    ObjectPool<Order, 100000> pool;
+static void BM_OrderFillOnly(benchmark::State& state) {
+    lockfree::ObjectPool<Order, 100000> pool;
     auto order = pool.acquire();
     order->quantity = 100;
     order->remaining_quantity = 100;
     
     for (auto _ : state) {
         order->fill(1);
-        DoNotOptimize(order);
+        benchmark::DoNotOptimize(order);
     }
 }
 BENCHMARK(BM_OrderFillOnly);
