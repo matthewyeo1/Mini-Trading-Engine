@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -96,6 +97,9 @@ void FeedHandler::parse_add_order(const uint8_t* data, size_t len) {
     for (const auto& cb : m_on_add_order) {
         if (cb) cb(order);
     }
+
+    std::cout << "Parsed order: " << order.symbol << " side=" << (order.side == OrderSide::BUY ? "BUY" : "SELL")
+          << " price=" << order.price << " qty=" << order.quantity << std::endl;
     
     m_message_count++;
 }
@@ -207,9 +211,13 @@ void FeedHandler::process(const char* data, size_t len) {
 
 void FeedHandler::process_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
+
     if (!file.is_open()) {
+        std::cout << "[DEBUG] Error opening file: " << filename << std::endl;
         return;
     }
+
+    std::cout << "[DEBUG] Opening file: " << filename << std::endl;
     
     file.seekg(0, std::ios::end);
     size_t file_size = file.tellg();

@@ -1,5 +1,6 @@
 #include "velox/matching/matching_engine.hpp"
 #include <cstring>
+#include <iostream>
 
 namespace velox {
 
@@ -17,17 +18,19 @@ MatchingEngine::~MatchingEngine() = default;
 bool MatchingEngine::submit_order(Order* order) {
     if (!order) return false;
 
+    std::cout << "[DEBUG] MatchingEngine::submit_order, pushing to queue" << std::endl;
     return m_incoming_orders.push(order);
 }
 
 void MatchingEngine::run_match_cycle() {
+    std::cout << "[DEBUG] MatchingEngine::run_match_cycle" << std::endl;
+    
     while (auto opt_order = m_incoming_orders.pop()) {
         process_order(opt_order.value());
     }
 }
 
 void MatchingEngine::process_order(Order* order) {
-
     // Run risk check
     if (!check_risk(order)) {
         order->status = OrderStatus::REJECTED;
@@ -54,8 +57,8 @@ void MatchingEngine::process_order(Order* order) {
         m_match_count++;
     }
 
-    // If partially filled, remainder is added to the book
-    if (remaining && remaining->remaining_quantity > 0) {
+    // Partial count only incremented when a fill actually occurred
+    if (order->filled_quantity > 0 && order->remaining_quantity > 0) {
         m_partial_count++;
     }
 

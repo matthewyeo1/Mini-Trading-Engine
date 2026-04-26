@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "velox/matching/order.hpp"
 #include "velox/book/price_level.hpp"
+#include <iostream>
 
 namespace velox {
 
@@ -35,7 +36,6 @@ public:
     const char* symbol() const { return m_symbol; }
 
 private:
-
     // Stock ticker size
     char m_symbol[8]; 
 
@@ -46,7 +46,7 @@ private:
     alignas(64) std::atomic<uint32_t> m_bid_depth{0};
     alignas(64) std::atomic<uint32_t> m_ask_depth{0};
     
-    // Price levels (using simple vectors for now - can be optimized later)
+    // Price levels 
     std::vector<PriceLevel*> m_bid_levels;  // Sorted high to low
     std::vector<PriceLevel*> m_ask_levels;  // Sorted low to high
 

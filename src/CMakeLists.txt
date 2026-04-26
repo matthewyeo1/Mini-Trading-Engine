@@ -29,3 +29,14 @@ target_include_directories(velox_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include  
 )
+
+add_executable(velox_trading_engine main.cpp)
+
+target_link_libraries(velox_trading_engine
+    velox_core
+)
+
+target_include_directories(velox_trading_engine PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
+)

@@ -1,5 +1,6 @@
 #include "velox/book/price_level.hpp"
 #include <algorithm>
+#include <iostream>
 
 namespace velox {
 
@@ -36,7 +37,6 @@ Order* PriceLevel::match_order(Order* incoming) {
     if (!incoming) return nullptr;
 
     while (incoming->remaining_quantity > 0) {
-
         advance();
 
         if (m_head == m_tail) break;
@@ -62,7 +62,7 @@ Order* PriceLevel::match_order(Order* incoming) {
 
         m_total_quantity -= fill;
 
-        // If maker fully filled → pop from FIFO
+        // If maker fully filled, pop from FIFO
         if (current->remaining_quantity == 0) {
             m_buffer[m_head] = nullptr;
             m_head = next(m_head);
@@ -72,6 +72,8 @@ Order* PriceLevel::match_order(Order* incoming) {
         if (incoming->remaining_quantity == 0)
             break;
     }
+
+    std::cout << "  Matching at price=" << m_price << " m_total_qty=" << m_total_quantity << std::endl;
 
     return (incoming->remaining_quantity > 0) ? incoming : nullptr;
 }

@@ -21,13 +21,13 @@ public:
 
     ~MatchingEngine();
     
-    // Submit order (called by risk manager)
+    // Submit order (called by Risk Manager)
     bool submit_order(Order* order);
     
-    // Run matching cycle (called by matching thread)
+    // Run matching cycle (called by Matching Engine)
     void run_match_cycle();
     
-    // Statistics
+    // Stats
     struct Stats {
         uint64_t orders_matched = 0;
         uint64_t orders_rejected = 0;
@@ -38,7 +38,6 @@ public:
     Stats get_stats() const;
     
 private:
-
     OrderBook m_order_book;
     RiskManager* m_risk_manager;
     ExecutionGateway* m_gateway;
