@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "velox/book/order_book.hpp"
 #include "lockfree/pool.hpp"
+#include "velox/book/fill.hpp"
 
 using namespace velox;
 
@@ -49,6 +50,9 @@ TEST_F(OrderBookTest, AddAskOrder) {
 }
 
 TEST_F(OrderBookTest, MatchBuyWithExistingSell) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     // Add sell order at $100
     auto sell = create_order(1, OrderSide::SELL, 10000, 100);
     book->add_order(sell);
@@ -56,7 +60,7 @@ TEST_F(OrderBookTest, MatchBuyWithExistingSell) {
     
     // Incoming buy order at $101 (crosses)
     auto buy = create_order(2, OrderSide::BUY, 10100, 60);
-    auto remaining = book->match(buy);
+    auto remaining = book->match(buy, fills);
     
     // Buy should be fully filled
     EXPECT_EQ(buy->remaining_quantity, 0);
@@ -67,6 +71,9 @@ TEST_F(OrderBookTest, MatchBuyWithExistingSell) {
 }
 
 TEST_F(OrderBookTest, MatchSellWithExistingBuy) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     // Add buy order at $100
     auto buy = create_order(1, OrderSide::BUY, 10000, 100);
     book->add_order(buy);
@@ -74,7 +81,7 @@ TEST_F(OrderBookTest, MatchSellWithExistingBuy) {
     
     // Incoming sell order at $99 (crosses)
     auto sell = create_order(2, OrderSide::SELL, 9900, 60);
-    auto remaining = book->match(sell);
+    auto remaining = book->match(sell, fills);
     
     // Sell should be fully filled
     EXPECT_EQ(sell->remaining_quantity, 0);
@@ -85,13 +92,16 @@ TEST_F(OrderBookTest, MatchSellWithExistingBuy) {
 }
 
 TEST_F(OrderBookTest, PartialFillRemainingGoesToBook) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     // Add sell order at $100
     auto sell = create_order(1, OrderSide::SELL, 10000, 50);
     book->add_order(sell);
     
     // Incoming buy order for 100 (only 50 available)
     auto buy = create_order(2, OrderSide::BUY, 10100, 100);
-    auto remaining = book->match(buy);
+    auto remaining = book->match(buy, fills);
     
     // Buy should have 50 left and be added to book
     EXPECT_EQ(buy->remaining_quantity, 50);
@@ -103,6 +113,9 @@ TEST_F(OrderBookTest, PartialFillRemainingGoesToBook) {
 }
 
 TEST_F(OrderBookTest, MultiplePriceLevels) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     // Add buy orders at different prices
     auto buy1 = create_order(1, OrderSide::BUY, 10000, 50);
     auto buy2 = create_order(2, OrderSide::BUY, 9900, 30);
@@ -118,7 +131,7 @@ TEST_F(OrderBookTest, MultiplePriceLevels) {
     
     // Match a sell order at 10050 (should fill 10100 level only)
     auto sell = create_order(4, OrderSide::SELL, 10050, 15);
-    auto remaining = book->match(sell);
+    auto remaining = book->match(sell, fills);
     
     EXPECT_EQ(buy3->remaining_quantity, 5);  // 20 - 15 = 5 left
     EXPECT_EQ(sell->remaining_quantity, 0);

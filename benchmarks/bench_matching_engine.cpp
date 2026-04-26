@@ -83,6 +83,9 @@ static void BM_OrderBook_MatchOnly(benchmark::State& state) {
     std::vector<Order*> sells;
     sells.reserve(100);
 
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     for (int i = 0; i < 100; ++i) {
         sells.push_back(make_order(pool, owned, i, OrderSide::SELL, 10000 + i, 100));
     }
@@ -99,7 +102,8 @@ static void BM_OrderBook_MatchOnly(benchmark::State& state) {
         reset_order(buy, 10000);
         state.ResumeTiming();
 
-        book.match(buy);
+        fills.clear();
+        book.match(buy, fills);
         benchmark::DoNotOptimize(book);
     }
 }

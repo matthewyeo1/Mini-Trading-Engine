@@ -1,5 +1,6 @@
 #include "velox/matching/matching_engine.hpp"
 #include <cstring>
+#include <iostream>
 
 namespace velox {
 
@@ -17,16 +18,24 @@ MatchingEngine::~MatchingEngine() = default;
 bool MatchingEngine::submit_order(Order* order) {
     if (!order) return false;
 
+    // std::cout << "[DEBUG] MatchingEngine::submit_order, pushing to queue" << std::endl;
     return m_incoming_orders.push(order);
 }
 
 void MatchingEngine::run_match_cycle() {
+    // std::cout << "[DEBUG] MatchingEngine::run_match_cycle" << std::endl;
+    
     while (auto opt_order = m_incoming_orders.pop()) {
         process_order(opt_order.value());
     }
 }
 
 void MatchingEngine::process_order(Order* order) {
+    /*
+    std::cout << "[MATCHING_ENGINE] process_order ID=" << order->order_id 
+              << " side=" << (order->is_buy() ? "BUY" : "SELL")
+              << " price=" << order->price << std::endl;
+    */
 
     // Run risk check
     if (!check_risk(order)) {
@@ -44,18 +53,48 @@ void MatchingEngine::process_order(Order* order) {
         return;
 
     }
+    
+    // Convert market orders to aggressive limit orders
+    if (order->type == OrderType::MARKET) {
+        if (order->is_buy()) {
+            order->price = INT64_MAX;
+        } else {
+            order->price = 0;
+        }
+
+        order->type = OrderType::LIMIT;
+    }
+    
+    std::vector<Fill> fills;
+    fills.reserve(16);   
 
     // Match against order book
-    Order* remaining = m_order_book.match(order);
+    Order* remaining = m_order_book.match(order, fills);
+
+    // Update position for every resting order that was filled
+    for (const Fill& fill : fills) {
+        /*
+        std::cout << "[PROCESS_ORDER] Resting order filled. ID=" << fill.order->order_id 
+              << " qty=" << fill.quantity 
+              << " fill.price=" << fill.price 
+              << " order.price=" << fill.order->price << std::endl;
+        */
+
+        if (m_position_manager) {
+            m_position_manager->update_position(fill.order, fill.quantity, fill.order->price);
+        }
+    }
 
     // Send fills for executed portion
     if (order->filled_quantity > 0) {
         send_fill(order, order->filled_quantity, order->price);
-        m_match_count++;
+
+        // Count per fill
+        m_match_count += fills.empty() ? 1 : fills.size();
     }
 
-    // If partially filled, remainder is added to the book
-    if (remaining && remaining->remaining_quantity > 0) {
+    // Partial count only incremented when a fill actually occurred
+    if (order->filled_quantity > 0 && order->remaining_quantity > 0) {
         m_partial_count++;
     }
 

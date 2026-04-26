@@ -16,6 +16,12 @@ OrderBook::~OrderBook() {
 bool OrderBook::add_order(Order* order) {
     if (!order) return false;
     
+    /*
+    std::cout << "[ADD_ORDER] ID=" << order->order_id 
+              << " side=" << (order->is_buy() ? "BUY" : "SELL")
+              << " price=" << order->price << std::endl;
+    */
+
     bool is_bid = order->is_buy();
     int64_t price = order->price;
     
@@ -25,12 +31,19 @@ bool OrderBook::add_order(Order* order) {
         level = new PriceLevel(price);
         insert_level(level, is_bid);
     }
-    
+
+    /*
+    std::cout << "[DEBUG] OrderBook::add_order side=" << (is_bid ? "BUY" : "SELL")
+          << " price=" << price << " qty=" << order->remaining_quantity << std::endl;
+    */
+
     // Add order to the level
     level->add_order(order);
 
     // Index order for O(1) cancellation
     m_order_index[order->order_id] = {price, is_bid, order};
+
+    // std::cout << "[ADD_ORDER] Inserted into index. Index size=" << m_order_index.size() << std::endl;
     
     // Update depth and sequence
     if (is_bid) {
@@ -46,6 +59,16 @@ bool OrderBook::add_order(Order* order) {
 }
 
 bool OrderBook::cancel_order(uint64_t order_id) {
+    /* 
+    std::cout << "[CANCEL] Cancel called for order_id=" << order_id << std::endl;
+    std::cout << "[CANCEL] Index size=" << m_order_index.size() << std::endl;
+
+    
+    for (const auto& pair : m_order_index) {
+        std::cout << "[CANCEL] Index contains ID=" << pair.first << std::endl;
+    }
+    */
+
     // O(1) hashmap lookup
     auto it = m_order_index.find(order_id);
     if (it == m_order_index.end()) {
@@ -88,25 +111,37 @@ bool OrderBook::cancel_order(uint64_t order_id) {
     return true;
 }
 
-Order* OrderBook::match(Order* incoming_order) {
-    if (!incoming_order || incoming_order->remaining_quantity == 0)
+Order* OrderBook::match(Order* incoming_order, std::vector<Fill>& fills) {
+    if (!incoming_order || incoming_order->remaining_quantity == 0) {
         return incoming_order;
+    }
 
     bool is_bid = incoming_order->is_buy();
     std::vector<PriceLevel*>& levels = is_bid ? m_ask_levels : m_bid_levels;
 
+    /*
+    std::cout << "OrderBook::match: incoming " << (is_bid ? "BUY" : "SELL") << " price=" << incoming_order->price << " qty=" << incoming_order->remaining_quantity << std::endl;
+    std::cout << "Best bid=" << best_bid() << " best ask=" << best_ask() << std::endl;
+    */
+
     while (!levels.empty() && incoming_order->remaining_quantity > 0) {
         PriceLevel* level = levels.front();
 
-        if ( is_bid && level->price() > incoming_order->price) break;
+        if (is_bid && level->price() > incoming_order->price) break;
         if (!is_bid && level->price() < incoming_order->price) break;
 
         uint32_t before = level->total_quantity();
-        level->match_order(incoming_order);
+        level->match_order(incoming_order, fills);
         uint32_t after = level->total_quantity();
 
-        if (is_bid) m_ask_depth.fetch_sub(before - after, std::memory_order_release);
-        else        m_bid_depth.fetch_sub(before - after, std::memory_order_release);
+        uint32_t diff = before - after;
+
+        if (is_bid) {
+            m_ask_depth.fetch_sub(diff, std::memory_order_release);
+        }
+        else {       
+            m_bid_depth.fetch_sub(diff, std::memory_order_release);
+        }
 
         if (level->empty()) {
             m_price_to_level.erase(level->price());
@@ -117,14 +152,26 @@ Order* OrderBook::match(Order* incoming_order) {
 
     // Rest unfilled quantity into the book
     if (incoming_order->remaining_quantity > 0) {
+        // std::cout << "[MATCH] Adding resting order ID=" << incoming_order->order_id << std::endl;
+
         PriceLevel* level = find_level(incoming_order->price, is_bid);
+
         if (!level) {
             level = new PriceLevel(incoming_order->price);
             insert_level(level, is_bid);
         }
+
         level->add_order(incoming_order);
-        if (is_bid) m_bid_depth.fetch_add(incoming_order->remaining_quantity, std::memory_order_release);
-        else        m_ask_depth.fetch_add(incoming_order->remaining_quantity, std::memory_order_release);
+
+        if (is_bid) {
+            m_bid_depth.fetch_add(incoming_order->remaining_quantity, std::memory_order_release);
+        }
+        else {        
+            m_ask_depth.fetch_add(incoming_order->remaining_quantity, std::memory_order_release);
+        }
+
+        // Add to index
+        m_order_index[incoming_order->order_id] = {incoming_order->price, is_bid, incoming_order};
     }
 
     update_best_prices();
@@ -182,15 +229,19 @@ void OrderBook::update_best_prices() {
 
 void OrderBook::update_depth() {
     uint32_t bid_depth = 0;
+
     for (auto* level : m_bid_levels) {
         bid_depth += level->total_quantity();
     }
+
     m_bid_depth.store(bid_depth, std::memory_order_release);
     
     uint32_t ask_depth = 0;
+
     for (auto* level : m_ask_levels) {
         ask_depth += level->total_quantity();
     }
+    
     m_ask_depth.store(ask_depth, std::memory_order_release);
 }
 
