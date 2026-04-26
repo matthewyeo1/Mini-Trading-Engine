@@ -9,7 +9,6 @@ add_library(velox_core STATIC
     
     # Matching
     matching/matching_engine.cpp
-    matching/order.cpp
     
     # Risk
     risk/risk_manager.cpp

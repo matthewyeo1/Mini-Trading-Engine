@@ -98,9 +98,11 @@ void FeedHandler::parse_add_order(const uint8_t* data, size_t len) {
         if (cb) cb(order);
     }
 
+    /*
     std::cout << "Parsed order: " << order.symbol << " side=" << (order.side == OrderSide::BUY ? "BUY" : "SELL")
           << " price=" << order.price << " qty=" << order.quantity << std::endl;
-    
+    */
+
     m_message_count++;
 }
 
@@ -213,11 +215,11 @@ void FeedHandler::process_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
 
     if (!file.is_open()) {
-        std::cout << "[DEBUG] Error opening file: " << filename << std::endl;
+        // std::cout << "[DEBUG] Error opening file: " << filename << std::endl;
         return;
     }
 
-    std::cout << "[DEBUG] Opening file: " << filename << std::endl;
+    // std::cout << "[DEBUG] Opening file: " << filename << std::endl;
     
     file.seekg(0, std::ios::end);
     size_t file_size = file.tellg();

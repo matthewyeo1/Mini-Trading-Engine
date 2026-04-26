@@ -25,6 +25,11 @@ public:
         m_engine.run_match_cycle();
     }
 
+    // Cancel order (via Order Book)
+    bool cancel_order(uint64_t order_id) {
+        return m_engine.cancel_order(order_id);
+    }
+
     // Access to Order Book for snapshots
     const OrderBook& order_book() const {
         return m_book;

@@ -23,6 +23,11 @@ public:
     
     // Submit order (called by Risk Manager)
     bool submit_order(Order* order);
+
+    // Cancel order (via Order Book)
+    bool cancel_order(uint64_t order_id) {
+        return m_order_book.cancel_order(order_id);
+    }
     
     // Run matching cycle (called by Matching Engine)
     void run_match_cycle();
@@ -36,7 +41,7 @@ public:
     };
     
     Stats get_stats() const;
-    
+
 private:
     OrderBook m_order_book;
     RiskManager* m_risk_manager;

@@ -17,7 +17,7 @@ public:
     // Core operations
     bool add_order(Order* order);
     bool cancel_order(uint64_t order_id);
-    Order* match(Order* incoming_order);
+    Order* match(Order* incoming_order, std::vector<Fill>& fills);
     const std::vector<PriceLevel*>& get_bid_levels() const { return m_bid_levels; }
     const std::vector<PriceLevel*>& get_ask_levels() const { return m_ask_levels; }
     

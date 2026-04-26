@@ -40,6 +40,9 @@ BENCHMARK(BM_PriceLevel_RemoveOrder);
 static void BM_PriceLevel_MatchOrder(State& state) {
     ObjectPool<Order, 100000> pool;
     PriceLevel level(10000);
+
+    std::vector<Fill> fills;
+    fills.reserve(100);
     
     // Setup: add a buy order
     auto buy = pool.acquire();
@@ -56,7 +59,8 @@ static void BM_PriceLevel_MatchOrder(State& state) {
         sell->quantity = 60;
         sell->remaining_quantity = 60;
         
-        auto remaining = level.match_order(sell.get());
+        fills.clear();
+        auto remaining = level.match_order(sell.get(), fills);
         DoNotOptimize(remaining);
         
         // Restore the buy order for next iteration

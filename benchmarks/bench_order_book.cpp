@@ -87,6 +87,10 @@ static void BM_OrderBook_MatchBuy(benchmark::State& state) {
     // Resting sell orders — created once, reset each iteration
     std::vector<Order*> sells;
     sells.reserve(100);
+
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     for (int i = 0; i < 100; ++i)
         sells.push_back(make_order(pool, owned, i, OrderSide::SELL, 10000 - i, 100));
 
@@ -102,9 +106,10 @@ static void BM_OrderBook_MatchBuy(benchmark::State& state) {
             book.add_order(s);
         }
         reset_order(buy, 10000);
-        state.ResumeTiming();
+        state.ResumeTiming();  
 
-        auto remaining = book.match(buy);
+        fills.clear();
+        auto remaining = book.match(buy, fills);
         benchmark::DoNotOptimize(remaining);
     }
 }
@@ -116,6 +121,10 @@ static void BM_OrderBook_MatchSell(benchmark::State& state) {
 
     std::vector<Order*> buys;
     buys.reserve(100);
+
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     for (int i = 0; i < 100; ++i)
         buys.push_back(make_order(pool, owned, i, OrderSide::BUY, 10000 + i, 100));
 
@@ -128,10 +137,12 @@ static void BM_OrderBook_MatchSell(benchmark::State& state) {
             reset_order(b, 100);
             book.add_order(b);
         }
+
+        fills.clear();
         reset_order(sell, 10000);
         state.ResumeTiming();
 
-        auto remaining = book.match(sell);
+        auto remaining = book.match(sell, fills);
         benchmark::DoNotOptimize(remaining);
     }
 }
@@ -143,6 +154,10 @@ static void BM_OrderBook_MarketOrder(benchmark::State& state) {
 
     std::vector<Order*> sells;
     sells.reserve(100);
+
+    std::vector<Fill> fills;
+    fills.reserve(100);
+    
     for (int i = 0; i < 100; ++i)
         sells.push_back(make_order(pool, owned, i, OrderSide::SELL, 10000 + i * 10, 100));
 
@@ -158,7 +173,8 @@ static void BM_OrderBook_MarketOrder(benchmark::State& state) {
         reset_order(buy, 10000);
         state.ResumeTiming();
 
-        auto remaining = book.match(buy);
+        fills.clear();
+        auto remaining = book.match(buy, fills);
         benchmark::DoNotOptimize(remaining);
     }
 }

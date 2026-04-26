@@ -3,11 +3,14 @@
 #include "velox/gateway/execution_gateway.hpp"
 #include "velox/risk/position_manager.hpp"
 #include "velox/feed/feed_handler.hpp"
+#include "velox/matching/matching_engine.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
 #include <signal.h>
 #include <iostream>
+#include <chrono>
+#include <ctime>
 
 using namespace velox;
 
@@ -61,7 +64,7 @@ int main() {
 
                 auto new_order = global_pool.acquire();
                 *new_order = order;     // Copy
-                std::cout << "[DEBUG] Routing to engine for symbol: " << e->order_book().symbol() << std::endl;
+                // std::cout << "[DEBUG] Routing to engine for symbol: " << e->order_book().symbol() << std::endl;
                 e->on_market_order(new_order.get());
                 pending_orders.push_back(std::move(new_order));
                 break;
@@ -81,10 +84,38 @@ int main() {
         });
     }
 
+    // Spawn a thread for stats reporting
+    std::thread stats_thread([&]() {
+        while (g_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));  // N = 5 seconds (arbitrary)
+            
+            std::cout << "\n=== Trading Engine Stats [" 
+                      << std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())
+                      << "] ===" << std::endl;
+            
+            for (auto& e : engines) {
+                auto stats = e->get_stats();
+                int64_t position = pos_manager.get_position(e->symbol());
+                int64_t realized_pnl = pos_manager.get_realized_pnl(e->symbol());
+                
+                std::cout << "  " << e->symbol() 
+                          << ": matched=" << stats.orders_matched
+                          << ", position=" << position
+                          << ", realized_PnL=$" << (realized_pnl / 100.0)
+                          << ", rejected=" << stats.orders_rejected
+                          << ", partial=" << stats.orders_partially_filled
+                          << std::endl;
+            }
+            
+            std::cout << "  Gateway: total_reports=" << gateway.total_reports_sent() 
+                      << ", total_orders=" << gateway.total_orders_sent() << std::endl;
+        }
+    });
+
     // Process market data by simulating read from ITCH file
     // TODO: change to read from constant stream
     std::thread feed_thread([&]() {
-        std::cout << "[DEBUG] Parsing mock ITCH file in test_data/NASDAQ_ITCH50_sample.bin..." << std::endl;
+        // std::cout << "[DEBUG] Parsing mock ITCH file in test_data/NASDAQ_ITCH50_sample.bin..." << std::endl;
         feed_handler.process_file("test_data/NASDAQ_ITCH50_sample.bin");
         g_running = false;   // Stop workers when feed ends
     });
@@ -104,30 +135,35 @@ int main() {
     
     // Wait for shutdown
     feed_thread.join();
-    
-    // Manually drain each engine's queue
-    for (auto& e : engines) {
-        e->run_match_cycle();   // run once more
-    }
-    // Give workers a chance (if still running)
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     g_running = false;
+
+    // Fully drain each engine's queue before shutting down workers
+    for (auto& e : engines) {
+        e->run_match_cycle();
+    }
+
+    // Let stats reporting thread print before yielding
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Join stats thread
+    if (stats_thread.joinable()) {
+        stats_thread.join();
+    }
     
-    // snapshot_thread.join();
+    // Join worker threads
+    for (auto& t : worker_threads) {
+        if (t.joinable()) t.join();
+    }
 
     // Print final stats
+    std::cout << "\n=== FINAL STATISTICS ===" << std::endl;
     for (auto& e : engines) {
         auto stats = e->get_stats();
-
-        
         std::cout << e->symbol() << ": matched=" << stats.orders_matched
                   << ", rejected=" << stats.orders_rejected
                   << ", partial=" << stats.orders_partially_filled
-                  << ", avg_latency_ns=" << stats.avg_match_latency_ns
                   << std::endl;
-        
     }
 
     return 0;
-
 }

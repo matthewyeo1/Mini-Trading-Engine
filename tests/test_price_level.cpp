@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "velox/book/price_level.hpp"
 #include "lockfree/pool.hpp"
+#include "velox/book/fill.hpp"
 
 using namespace velox;
 
@@ -46,6 +47,9 @@ TEST_F(PriceLevelTest, AddMultipleOrders_FIFO) {
 }
 
 TEST_F(PriceLevelTest, RemoveOrder_IsImplicit_FIFO) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     PriceLevel level(10000);
 
     auto o1 = pool->acquire();
@@ -60,12 +64,15 @@ TEST_F(PriceLevelTest, RemoveOrder_IsImplicit_FIFO) {
     // simulate full fill of o2 via match (not remove_order)
     o2->remaining_quantity = 0;
 
-    level.match_order(o2.get()); // safe no-op-ish
+    level.match_order(o2.get(), fills); // safe no-op-ish
 
     EXPECT_EQ(level.head(), o1.get());
 }
 
 TEST_F(PriceLevelTest, MatchOrderFullFill) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     PriceLevel level(10000);
 
     auto buy = pool->acquire();
@@ -76,7 +83,7 @@ TEST_F(PriceLevelTest, MatchOrderFullFill) {
     auto sell = pool->acquire();
     sell->remaining_quantity = 60;
 
-    auto remaining = level.match_order(sell.get());
+    auto remaining = level.match_order(sell.get(), fills);
 
     EXPECT_EQ(buy->remaining_quantity, 40);
     EXPECT_EQ(sell->remaining_quantity, 0);
@@ -85,6 +92,9 @@ TEST_F(PriceLevelTest, MatchOrderFullFill) {
 }
 
 TEST_F(PriceLevelTest, MatchOrderPartialFillAcrossQueue) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     PriceLevel level(10000);
 
     auto b1 = pool->acquire();
@@ -99,7 +109,7 @@ TEST_F(PriceLevelTest, MatchOrderPartialFillAcrossQueue) {
     auto sell = pool->acquire();
     sell->remaining_quantity = 60;
 
-    level.match_order(sell.get());
+    level.match_order(sell.get(), fills);
 
     EXPECT_EQ(b1->remaining_quantity, 0);
     EXPECT_EQ(b2->remaining_quantity, 20);
@@ -108,12 +118,15 @@ TEST_F(PriceLevelTest, MatchOrderPartialFillAcrossQueue) {
 }
 
 TEST_F(PriceLevelTest, MatchOrderEmptyLevel) {
+    std::vector<Fill> fills;
+    fills.reserve(100);
+
     PriceLevel level(10000);
 
     auto sell = pool->acquire();
     sell->remaining_quantity = 100;
 
-    auto remaining = level.match_order(sell.get());
+    auto remaining = level.match_order(sell.get(), fills);
 
     EXPECT_EQ(remaining, sell.get());
     EXPECT_EQ(level.total_quantity(), 0);

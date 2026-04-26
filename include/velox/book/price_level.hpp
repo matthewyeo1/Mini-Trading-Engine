@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <array>
+#include <vector>
 #include "velox/matching/order.hpp"
+#include "velox/book/fill.hpp"
 
 namespace velox {
 
@@ -16,7 +18,7 @@ public:
     // Core operations
     void add_order(Order* order);
     void remove_order(Order* order);        
-    Order* match_order(Order* incoming);
+    Order* match_order(Order* incoming, std::vector<Fill>& fills);
 
     // Getters
     int64_t price() const { return m_price; }
