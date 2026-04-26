@@ -51,9 +51,11 @@ protected:
     }
 
     void submit_order(Order* order) {
+        /*
         std::cout << "[INTEGRATION_TEST] Submitting order ID=" << order->order_id 
               << " symbol=" << order->symbol << std::endl;
-
+        */
+       
         // Find the correct engine for the symbol
         for (auto& eng : engines) {
             if (strcmp(eng->order_book().symbol(), order->symbol) == 0) {
