@@ -8,6 +8,7 @@ add_executable(bench_execution_gateway bench_execution_gateway.cpp)
 add_executable(bench_feed_handler bench_feed_handler.cpp)
 add_executable(bench_book_snapshot bench_book_snapshot.cpp)
 add_executable(bench_position_manager bench_position_manager.cpp)
+add_executable(bench_pipeline bench_pipeline.cpp)
 
 # Link libraries for each
 foreach(bench_target 
@@ -19,7 +20,8 @@ foreach(bench_target
         bench_execution_gateway
         bench_feed_handler
         bench_book_snapshot
-        bench_position_manager)
+        bench_position_manager
+        bench_pipeline)
     target_link_libraries(${bench_target} 
         velox_core 
         benchmark::benchmark
