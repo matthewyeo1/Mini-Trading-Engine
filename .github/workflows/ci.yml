@@ -24,17 +24,16 @@ jobs:
     - name: Verify Installation (Linux)
       run: |
         cmake --version
-        g++-11 --version
-        clang-15 --version 
+        g++-11 --version 
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
     
-    #- name: Build
-    #  run: cmake --build build --parallel
-    #
-    #- name: Run tests
-    #  run: ./build/tests/velox_tests
+    - name: Build
+      run: cmake --build build --parallel
+    
+    - name: Run tests
+      run: ./build/tests/velox_tests
 
   windows-build:
     name: Windows Build
@@ -59,8 +58,8 @@ jobs:
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
     
-    #- name: Build
-    #  run: cmake --build build --config Release --parallel
-    #
-    #- name: Run tests
-    #  run: ./build/tests/Release/velox_tests.exe
+    - name: Build
+      run: cmake --build build --config Release --parallel
+    
+    - name: Run tests
+      run: ./build/tests/Release/velox_tests.exe
