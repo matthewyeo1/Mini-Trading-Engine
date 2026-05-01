@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <thread>
 #include "velox/core/symbol_engine.hpp"
 #include "velox/risk/risk_manager.hpp"
 #include "velox/gateway/execution_gateway.hpp"

@@ -83,27 +83,30 @@ TEST(OrderTest, ResetOrder) {
 
 TEST(OrderTest, ObjectPoolReuse) {
     ObjectPool<Order, 10> pool;
+    uintptr_t addr1 = 0;
     
-    auto order1 = pool.acquire();
-    ASSERT_NE(order1.get(), nullptr);
-    order1->order_id = 1;
-    order1->price = 10000;
+    // Separate order1 & order2 into separate scopes
+    {   
+        auto order1 = pool.acquire();
+        ASSERT_NE(order1.get(), nullptr);
+        order1->order_id = 1;
+        order1->price = 10000;
+        addr1 = reinterpret_cast<uintptr_t>(order1.get());
+        // PooledPtr of order1 will be released back to pool automatically
+    }
     
-    uintptr_t addr1 = reinterpret_cast<uintptr_t>(order1.get());
-    
-    // Release back to pool
-    order1.release();
-    
-    auto order2 = pool.acquire();
-    ASSERT_NE(order2.get(), nullptr);
-    
-    uintptr_t addr2 = reinterpret_cast<uintptr_t>(order2.get());
-    
-    // Should reuse the same memory
-    EXPECT_EQ(addr1, addr2);
-    
-    order2->order_id = 2;
-    EXPECT_EQ(order2->order_id, 2);
+    {
+        auto order2 = pool.acquire();
+        ASSERT_NE(order2.get(), nullptr);
+        
+        uintptr_t addr2 = reinterpret_cast<uintptr_t>(order2.get());
+        
+        // Should reuse the same memory
+        EXPECT_EQ(addr1, addr2);
+        
+        order2->order_id = 2;
+        EXPECT_EQ(order2->order_id, 2);
+    }
 }
 
 /*
