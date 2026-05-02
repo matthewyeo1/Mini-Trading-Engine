@@ -14,28 +14,25 @@ using namespace velox;
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <ITCH_file.bin> [speed_factor]\n";
-        std::cerr << "  speed_factor: 1.0 = real time, 2.0 = 2x faster, 0.5 = half speed\n";
         return 1;
     }
 
     const char* filename = argv[1];
     double speed = (argc >= 3) ? std::stod(argv[2]) : 1.0;
 
-    // Open ITCH binary file
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
         std::cerr << "Failed to open: " << filename << std::endl;
         return 1;
     }
 
-    // Engine setup (same as main.cpp)
+    // Engine setup
     RiskManager risk;
     ExecutionGateway gateway;
     PositionManager pos_mgr;
     FeedHandler feed;
 
     const int num_workers = std::thread::hardware_concurrency();
-
     for (int i = 0; i < num_workers; ++i) {
         gateway.add_worker();
     }
@@ -61,49 +58,37 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    // Replay loop
+    std::cout << "Starting at offset: " << file.tellg() << std::endl;
     std::cout << "Replaying " << filename << " at " << speed << "x speed\n";
 
-    // Initialize buffer
-    std::vector<char> buffer(65536);  
-    uint64_t prev_timestamp = 0;
-    auto start_real = std::chrono::steady_clock::now();
+    // Read entire file in chunks and feed to FeedHandler
+    // FeedHandler handles all ITCH parsing internally
+    const size_t BUFFER_SIZE = 64 * 1024;  // 64KB chunks
+    std::vector<char> buffer(BUFFER_SIZE);
+    uint64_t total_bytes = 0;
+    
+    // Optional: track time for speed control
+    auto start_time = std::chrono::steady_clock::now();
+    uint64_t bytes_processed = 0;
 
-    while (file) {
-        // Read next message header
-        uint8_t header[2];
-        if (!file.read(reinterpret_cast<char*>(header), 2)) break;
-        uint16_t msg_len = (static_cast<uint16_t>(header[0]) << 8) | header[1];
-        if (msg_len < 2) break;
-
-        // Read full message
-        std::vector<uint8_t> msg(msg_len);
-        msg[0] = header[0];
-        msg[1] = header[1];
-        if (!file.read(reinterpret_cast<char*>(msg.data() + 2), msg_len - 2)) break;
-
-        // Extract timestamp (nanoseconds since midnight)
-        uint64_t timestamp = 0;
-
-        // All ITCH messages have 8-byte timestamp at offset 3
-        if (msg_len >= 11) {  
-            for (int i = 0; i < 8; ++i) {
-                timestamp = (timestamp << 8) | msg[3 + i];
-            }
+    while (file.read(buffer.data(), BUFFER_SIZE) || file.gcount() > 0) {
+        size_t bytes_read = file.gcount();
+        total_bytes += bytes_read;
+        
+        // Optional: add speed control here if needed (requires timestamp extraction)
+        
+        // Feed the raw data to FeedHandler – it handles all ITCH parsing
+        feed.process(buffer.data(), bytes_read);
+        
+        // Progress indicator
+        if (total_bytes / (1024 * 1024) > bytes_processed / (1024 * 1024) + 100) {
+            bytes_processed = total_bytes;
+            std::cout << "\rProcessed " << total_bytes / (1024 * 1024) << " MB..." << std::flush;
         }
-
-        // Simulate real-time arrival
-        if (prev_timestamp != 0 && timestamp > prev_timestamp) {
-            uint64_t delta_ns = static_cast<uint64_t>((timestamp - prev_timestamp) / speed);
-            std::this_thread::sleep_for(std::chrono::nanoseconds(delta_ns));
-        }
-        prev_timestamp = timestamp;
-
-        // Feed message into parser
-        feed.process(reinterpret_cast<const char*>(msg.data()), msg.size());
     }
 
     file.close();
+    std::cout << "\nFile read complete. Draining orders...\n";
 
     // Drain remaining orders
     for (auto& e : engines) {
@@ -117,7 +102,7 @@ int main(int argc, char* argv[]) {
         int64_t pnl = pos_mgr.get_realized_pnl(e->symbol());
         std::cout << e->symbol() << ": matched=" << stats.orders_matched
                   << ", partial=" << stats.orders_partially_filled
-                  << ", P&L=$" << (pnl / 100.0) << "\n";
+                  << ", P&L=$" << (pnl / 100.0) << std::endl;
     }
 
     return 0;

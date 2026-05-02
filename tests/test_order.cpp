@@ -1,9 +1,20 @@
 #include <gtest/gtest.h>
 #include "velox/matching/order.hpp"
 #include "velox/core/object_pool.hpp"
+#include "velox/book/order_book.hpp"
+#include <vector>
 
 using namespace velox;
 using namespace lockfree;
+
+class PriceLevelTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        pool = std::make_unique<lockfree::ObjectPool<Order, 1000>>();
+    }
+
+    std::unique_ptr<lockfree::ObjectPool<Order, 1000>> pool;
+};
 
 TEST(OrderTest, BasicOrderLifecycle) {
     ObjectPool<Order, 1000> pool;
@@ -109,40 +120,40 @@ TEST(OrderTest, ObjectPoolReuse) {
     }
 }
 
-/*
-TEST(PriceLevelTest, AddAndMatch) {
+TEST_F(PriceLevelTest, AddAndMatch) {
     PriceLevel level(10000);  // $100.00
     
-    OrderPool pool;
-    auto buy1 = pool.acquire();
-    buy1->side = OrderSide::BUY;
-    buy1->price = 10000;
-    buy1->quantity = 50;
-    buy1->remaining_quantity = 50;
+    lockfree::ObjectPool<Order, 100> pool;
+    std::vector<lockfree::PooledPtr<Order, 100>> owned;
     
-    auto buy2 = pool.acquire();
-    buy2->side = OrderSide::BUY;
-    buy2->price = 10000;
-    buy2->quantity = 30;
-    buy2->remaining_quantity = 30;
+    auto create_order = [&](uint64_t id, OrderSide side, int64_t price, uint32_t qty) -> Order* {
+        auto order = pool.acquire();
+        order->order_id = id;
+        order->side = side;
+        order->price = price;
+        order->quantity = qty;
+        order->remaining_quantity = qty;
+        order->filled_quantity = 0;
+        order->status = OrderStatus::NEW;
+        Order* raw = order.get();
+        owned.push_back(std::move(order));
+        return raw;
+    };
     
-    level.add_order(buy1.get());
-    level.add_order(buy2.get());
+    auto buy1 = create_order(1, OrderSide::BUY, 10000, 50);
+    auto buy2 = create_order(2, OrderSide::BUY, 10000, 30);
+    
+    level.add_order(buy1);
+    level.add_order(buy2);
     
     EXPECT_EQ(level.total_quantity(), 80);
     
-    // Incoming sell order
-    auto sell = pool.acquire();
-    sell->side = OrderSide::SELL;
-    sell->price = 10000;
-    sell->quantity = 60;
-    sell->remaining_quantity = 60;
+    auto sell = create_order(3, OrderSide::SELL, 10000, 60);
     
-    auto result = level.match_order(sell.get());
-    
-    // Should partially fill
+    std::vector<Fill> fills;                              
+    auto result = level.match_order(sell, fills);        
     EXPECT_EQ(buy1->remaining_quantity, 0);
     EXPECT_EQ(buy2->remaining_quantity, 20);
     EXPECT_EQ(sell->remaining_quantity, 0);
+    EXPECT_EQ(result, nullptr);                           
 }
-*/

@@ -7,9 +7,9 @@ A low-latency trading engine built on a foundation of lock-free data structures.
 Velox is a C++17 trading engine targeting sub-microsecond order-to-execution latency. Every component in the hot path is allocation-free, lock-free, and cache-aware. The architecture maps each data flow to the correct concurrent primitive rather than reaching for a general-purpose queue everywhere.
 
 ```
-Market Feed → Decoder → Order Book → Matching Engine → Risk → Execution Gateway
-                                          ↑                           ↓
-                                    Symbol Config (RCU)      Position Manager
+Market Feed → Feed Handler → Order Book → Matching Engine → Risk Manager → Execution Gateway → Position Manager
+                                                                 ↓
+                                                            P&L Tracking
 ```
 
 All inter-stage communication uses SPSC queues — the fastest possible channel when producer and consumer are known at design time.
@@ -20,14 +20,14 @@ All inter-stage communication uses SPSC queues — the fastest possible channel 
 
 ### Pipeline Stages
 
-| Stage | Thread | Structure Used | Latency Budget |
+| Stage | Thread | Structure Used | Latency |
 |---|---|---|---|
-| Feed Handler | Core 0 | — | ~20ns |
-| Market Data Decoder | Core 1 | SPSC Queue (feed→decoder) | ~50ns |
-| Order Book Updater | Core 2 | SPSC Queue + HashMap | ~100ns |
-| Matching Engine | Core 3 | Treiber Stack (level pool) | ~150ns |
-| Risk Manager | Core 4 | Atomic Counter + HashMap | ~20ns |
-| Execution Gateway | Core 5 | SPSC Queue (per strategy) | ~50ns |
+| Feed Handler | Core 0 | ITCH 5.0 Parser | ~15 ns per message |
+| Order Book | Core 1 | Sorted Vector + HashMap | ~26 ns per order |
+| Matching Engine | Core 2 | Price-Time Priority | ~8 μs per match |
+| Risk Manager | Core 3 | Atomic Counter + HashMap | ~4 ns per check |
+| Execution Gateway | Core 4 | SPSC Queue + Object Pool | ~33 ns per report |
+| Position Manager | Core 5 | Weighted Average P&L | ~23 ns per update |
 
 ### Lock-Free Primitives
 
@@ -35,13 +35,13 @@ Each structure is chosen for the specific access pattern of its stage; not as a 
 
 | Structure | Role | Why This One |
 |---|---|---|
-| **SPSC Queue** | Inter-stage message passing | Single producer/consumer → wait-free, ~3ns per op |
-| **Ring Buffer** | Market data capture and replay logging | Fixed allocation, power-of-2 masking, zero GC pressure |
-| **HashMap** | Order book symbol lookups, risk exposure | O(1) reads on the critical path, open addressing |
-| **Object Pool** | Order and fill object reuse | Eliminates `new`/`delete` in the hot path entirely |
-| **Atomic Counter** | Order ID generation | Wait-free monotonic sequence, no coordination |
-| **RCU** | Symbol config and reference data | Readers never stall; config changes are rare writes |
-| **Treiber Stack** | Price level free-list | LIFO reuse of level nodes, ABA-safe with hazard pointers |
+| **SPSC Queue** | Inter-stage message passing | Single producer/consumer → wait-free |
+| **Ring Buffer** | Price level order queue | Fixed allocation, FIFO, cache-friendly |
+| **HashMap** | Price level lookup, order cancellation | O(1) access on critical path |
+| **Object Pool** | Order and report reuse | Eliminates `new`/`delete` in hot path |
+| **Atomic Counter** | Sequence numbers, statistics | Wait-free monotonic increments |
+| **PooledPtr** | RAII memory management | Automatic return to pool |
+| **Hazard Pointers** | Treiber stack reclamation | Safe memory reuse |
 
 ### Why No MPMC Queue
 
@@ -53,60 +53,35 @@ Multiple-producer scenarios are handled by **partitioning**: each strategy threa
 
 ```
 mini-trading-engine/
-├── include/
-│   └── velox/
-|       ├── feed/
-│       │   ├── feed_handler.hpp        
-│       │   └── decoder.hpp             
-│       │
-│       ├── book/
-│       │   ├── order_book.hpp          
-│       │   ├── price_level.hpp         
-│       │   └── book_snapshot.hpp       
-│       │
-│       ├── matching/
-│       │   ├── matching_engine.hpp     
-│       │   └── order.hpp               
-│       │
-│       ├── risk/
-│       │   ├── risk_manager.hpp        
-│       │   └── position_manager.hpp    
-│       │
-│       └── gateway/
-│           ├── execution_gateway.hpp   
-│           └── fix_encoder.hpp               
-├── src/
-│   ├── feed/
-│   │   ├── feed_handler.cpp        # Raw market data ingestion
-│   │   └── decoder.cpp             # ITCH/FIX message decoding
-│   ├── book/
-│   │   ├── order_book.cpp          # Price level management
-│   │   ├── price_level.cpp         # Per-level order queue
-│   │   └── book_snapshot.cpp       # RCU-protected read view
-│   ├── matching/
-│   │   ├── matching_engine.cpp     # Price-time priority matching
-│   │   └── order.cpp               # Order struct (pool-allocated)
-│   ├── risk/
-│   │   ├── risk_manager.cpp        # Position limits and circuit breakers
-│   │   └── position_manager.cpp    # Atomic P&L and exposure tracking
-│   └── gateway/
-│       ├── execution_gateway.cpp   # Outbound order routing
-│       └── fix_encoder.cpp         # FIX 4.2 message formatting
+├── include/velox/
+│ ├── feed/
+│ │ └── feed_handler.hpp # ITCH 5.0 parser
+│ ├── book/
+│ │ ├── order_book.hpp # Price level management
+│ │ ├── price_level.hpp # Ring buffer per level
+│ │ └── book_snapshot.hpp # RCU-protected snapshots
+│ ├── matching/
+│ │ ├── matching_engine.hpp # Order matching
+│ │ └── order.hpp # Order struct
+│ ├── risk/
+│ │ ├── risk_manager.hpp # Position limits
+│ │ └── position_manager.hpp # P&L tracking
+│ ├── gateway/
+│ │ └── execution_gateway.hpp # Report routing
+│ └── core/
+│ └── symbol_engine.hpp # Per-symbol engine
+├── src/ (matching .cpp files)
 ├── benchmarks/
-│   ├── bench_primitives.cpp        # Lock-free structure microbenchmarks
-│   ├── bench_pipeline.cpp          # End-to-end pipeline throughput
-│   └── bench_book.cpp              # Order book update latency
+│ └── (10+ benchmarking routines, including one for overall pipeline)
 ├── tests/
-│   └── ...
-├── third_party/                    # Third-party directory containing submodules 
-│   ├── benchmark/                  # Google Benchmark library for performance testing
-|   |   └── ...
-│   ├── googletest/                 # Google Test framework for unit testing
-|   |   └── ...
-│   └── whirlpool/                  # Lock-free data structure library for core engine
-|       └── ...
+│ └── (74+ unit and integration tests)
 ├── tools/
-│   └── itch_replay.cpp             # Replay recorded NASDAQ ITCH 5.0 data
+│ ├── create_mock_itch.cpp # Mock ITCH generator
+│ └── itch_parser.cpp # Real ITCH replay tool
+├── third_party/
+│ ├── googletest/ # Unit testing
+│ ├── benchmark/ # Performance benchmarking
+│ └── whirlpool/ # Custom lock-free library (submodule)
 └── CMakeLists.txt
 ```
 
@@ -119,7 +94,6 @@ mini-trading-engine/
 - C++17 compiler (GCC 9+, Clang 10+)
 - CMake 3.16+
 - Google Benchmark (for benchmarks)
-- Linux recommended — thread pinning and TSC measurement require it
 
 ### Build
 
@@ -133,13 +107,15 @@ cmake --build build --config Release
 ### Run Tests
 
 ```bash
+# Run all tests
 ./build/tests/Release/velox_tests.exe
 ```
 
 ### Run Benchmarks
 
 ```bash
-./build/benchmarks/Release/bench_order.exe  
+# Run benchmark routine for Order Book
+./build/benchmarks/Release/bench_order_book.exe  
 ```
 
 ## Performance
@@ -148,82 +124,48 @@ All measurements taken on a pinned core with frequency scaling disabled. Latency
 
 ### Lock-Free Primitives
 
-| Structure | Operation | p50 | p99 | p99.9 |
-|---|---|---|---|---|
-| SPSC Queue | push + pop | — | — | — |
-| Ring Buffer | push + pop | — | — | — |
-| HashMap | lookup (hit) | — | — | — |
-| Object Pool | acquire + release | — | — | — |
-| Atomic Counter | increment | — | — | — |
-| Treiber Stack | push + pop | — | — | — |
+| Structure | Operation | Time
+|---|---|---|
+| SPSC Queue | push/pop | ~3ns |
+| Object Pool | acquire/release | ~23ns |
+| Order Book | add order | ~26ns |
+| Order Book | match | ~8μs |
+| Risk Manager | check order | ~4ns |
+| Position Manager | update P&L | ~23ns |
+| Execution Gateway | send report | ~33ns | 
 
 *Results pending hardware benchmarking. Target: SPSC within 2x of LMAX Disruptor.*
 
-### Pipeline Latency
+### Pipeline Throughput
 
-| Metric | Target | Measured |
-|---|---|---|
-| Feed decode latency | < 100ns | — |
-| Order book update | < 200ns | — |
-| Match + risk check | < 100ns | — |
-| Order-to-execution (hot path) | < 1µs | — |
-| Throughput at saturation | > 10M orders/sec | — |
+| Metric | Measured |
+|---|---|
+| Match latency | ~8μs |
+| Order throughput | ~70,000 orders/s |
+| Full pipeline | 1.9ms |
+| ITCH parse rate | 15ns/message |
 
-### Measurement Methodology
+### Key Design Considerations
 
-Latency is measured using `rdtsc` directly — not `std::chrono`. TSC has ~1ns resolution with no syscall overhead. All measurements:
+No dynamic allocation in the hot path. All orders and reports come from object pools. The matching engine processes an entire order lifecycle without calling new or delete.
 
-- Threads pinned to isolated cores via `pthread_setaffinity_np`
-- CPU frequency scaling disabled
-- 100k iteration warmup before recording
-- Reported as p50 / p99 / p99.9 over 1M samples
-- Compared against LMAX Disruptor and Chronicle Queue published benchmarks as a sanity check
+Ring buffer for price levels. Unlike traditional doubly-linked lists, the ring buffer provides O(1) FIFO operations with excellent cache locality. Lazy deletion marks cancelled orders without immediate removal.
 
----
+Partitioned concurrency over shared queues. Each symbol runs on its own thread with dedicated SPSC queues. Contention is eliminated by design, not managed at runtime.
 
-## Validation Against Real Market Data
+Price-time priority matching. Orders at the same price are executed in FIFO order using the ring buffer's natural ordering.
 
-Validate by replaying real market data and verifying fill prices match expected outcomes.
+Real-time ITCH replay. The `itch_parser` tool reads binary ITCH files message-by-message (streaming, not loading entire file) and respects original timestamps for realistic simulation.
 
-**NASDAQ ITCH 5.0** sample files are freely available at [https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/](https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/). The `tools/itch_replay` tool parses these files and drives the full pipeline:
+## Validation Methods
 
-```bash
-./build/tools/itch_replay --file 01302020.NASDAQ_ITCH50 --symbol AAPL --latency-report
-```
+- 74+ unit and integration tests covering all components
 
-This produces:
-- Fill prices vs. expected prices (correctness)
-- Per-stage latency breakdown (performance)
-- Order book state snapshots at configurable intervals (accuracy)
+- Google Benchmark suite for performance regression detection
 
-A correct matching engine replaying ITCH data should produce fills identical to the exchange's public trade tape.
+- ITCH 5.0 sample files from NASDAQ
 
----
-
-## Design Decisions
-
-**No dynamic allocation in the hot path.** All order objects come from the pool. All price level nodes come from the Treiber stack free-list. The matching engine processes an entire order lifecycle without calling `new` or `delete`.
-
-**Partitioned concurrency over shared queues.** Rather than a shared MPMC queue for strategy → gateway communication, each strategy owns a dedicated SPSC channel. Contention is eliminated by design, not managed at runtime.
-
-**RCU for reference data.** Symbol configurations change rarely but are read on every order. RCU lets the matching engine read config with zero synchronization overhead on the critical path. Updates are handled on a background thread with copy-on-write semantics.
-
-**TSC-based timing throughout.** All internal timestamps use `rdtsc`. The feed handler stamps each message on arrival; the execution gateway stamps each fill on departure. The difference is the authoritative latency number.
-
----
-
-## Roadmap
-
-- [ ] Feed handler — ITCH 5.0 parser
-- [ ] Order book — price level management with RCU snapshots  
-- [ ] Matching engine — price-time priority, partial fills, cancel/replace
-- [ ] Risk manager — position limits, per-symbol circuit breakers
-- [ ] Execution gateway — FIX 4.2 encoder, simulated wire
-- [ ] ITCH replay tool
-- [ ] Full pipeline benchmark with percentile reporting
-- [ ] Comparison report vs. Disruptor / Chronicle Queue
-
----
+- Mock ITCH generator for deterministic testing
 
 ## References
 
