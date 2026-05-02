@@ -1,5 +1,6 @@
 build/
 build_*/
+market_data/
 cmake-build-*/
 .vscode/
 .idea/

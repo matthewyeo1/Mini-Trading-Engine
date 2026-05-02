@@ -15,21 +15,25 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: 'false'
-        fetch-depth: 0
     
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y cmake build-essential
+        sudo apt install -y cmake build-essential g++-11 libgtest-dev libbenchmark-dev
+
+    - name: Verify Installation (Linux)
+      run: |
+        cmake --version
+        g++-11 --version 
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
     
-    #- name: Build
-    #  run: cmake --build build --parallel
-    #
-    #- name: Run tests
-    #  run: ./build/tests/velox_tests
+    - name: Build
+      run: cmake --build build --parallel
+    
+    - name: Run tests
+      run: ./build/tests/velox_tests
 
   windows-build:
     name: Windows Build
@@ -39,13 +43,23 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: 'false'
-        fetch-depth: 0
+
+    - name: Install Chocalatey Dependencies
+      shell: pwsh
+      run: |
+        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+        refreshenv
+
+    - name: Verify Installation (Windows)
+      shell: pwsh
+      run: |
+        cmake --version
     
     - name: Configure
       run: cmake -B build -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=OFF
     
-    #- name: Build
-    #  run: cmake --build build --config Release --parallel
-    #
-    #- name: Run tests
-    #  run: ./build/tests/Release/velox_tests.exe
+    - name: Build
+      run: cmake --build build --config Release --parallel
+    
+    - name: Run tests
+      run: ./build/tests/Release/velox_tests.exe
