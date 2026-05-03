@@ -4,165 +4,214 @@
 #include "velox/risk/position_manager.hpp"
 #include "velox/feed/feed_handler.hpp"
 #include "velox/matching/matching_engine.hpp"
+#include "velox/sim/strategy/bot_manager.hpp"
+#include "velox/sim/strategy/bots.hpp"
+
 #include <thread>
 #include <vector>
 #include <atomic>
 #include <signal.h>
 #include <iostream>
 #include <chrono>
-#include <ctime>
+#include <cstring>
 
 using namespace velox;
 
 static std::atomic<bool> g_running{true};
-
 void signal_handler(int) { g_running = false; }
 
 int main() {
-    // Signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    // Market data ingestion (entry point)
     FeedHandler feed_handler;
-
-    // Shared components
     RiskManager risk_manager;
     ExecutionGateway gateway;
     PositionManager pos_manager;
 
-    // Add workers to Execution Gateway (1 per CPU core, tunable)
-    const int num_workers = std::thread::hardware_concurrency();
+    auto bot_manager = std::make_unique<bot::BotManager>();
 
+    // Gateway workers
+    const int num_workers = std::thread::hardware_concurrency();
     for (int i = 0; i < num_workers; ++i) {
         gateway.add_worker();
     }
 
-    // Trading symbols
+    // Symbols
     std::vector<std::string> symbols = {"AAPL", "MSFT", "GOOGL", "AMZN", "META"};
 
-    // One Symbol Engine per symbol
     std::vector<std::unique_ptr<SymbolEngine>> engines;
-    std::vector<std::thread> worker_threads;
-
     for (const auto& s : symbols) {
         engines.push_back(std::make_unique<SymbolEngine>(
             s.c_str(), &risk_manager, &gateway, &pos_manager));
     }
 
-    // Market data feed
+    // Bots
+    bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_AAPL", "AAPL", 10000, 100, 500));
+    bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_AAPL", "AAPL"));
+    bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_AAPL", "AAPL"));
+    bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_AAPL", "AAPL"));
+    bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_AAPL", "AAPL"));
+
+    // Shared pools
+    static lockfree::ObjectPool<Order, 100000> global_pool;
+    static std::vector<lockfree::PooledPtr<Order, 100000>> order_storage;
+
+    // Feed handler routing
     feed_handler.on_add_order([&](const Order& order) {
-        
-        // Linear search for matching symbol
-        // TODO: use more efficient algorithm for larger symbol set
         for (auto& e : engines) {
             if (strcmp(e->order_book().symbol(), order.symbol) == 0) {
+                auto ptr = global_pool.acquire();
+                *ptr = order;
 
-                // Each engine has its own pool (for now)
-                static lockfree::ObjectPool<Order, 100000> global_pool;
-                static std::vector<lockfree::PooledPtr<Order, 100000>> pending_orders;
+                // CRITICAL: normalize state
+                ptr->remaining_quantity = ptr->quantity;
+                ptr->filled_quantity = 0;
+                ptr->status = OrderStatus::NEW;
 
-                auto new_order = global_pool.acquire();
-                *new_order = order;     // Copy
-                // std::cout << "[DEBUG] Routing to engine for symbol: " << e->order_book().symbol() << std::endl;
-                e->on_market_order(new_order.get());
-                pending_orders.push_back(std::move(new_order));
+                e->on_market_order(ptr.get());
+                order_storage.push_back(std::move(ptr));
                 break;
             }
         }
     });
 
-    // Spawn a thread for each symbol's matching engine
-    for (size_t i = 0; i < engines.size(); ++i) {
-        worker_threads.emplace_back([&e = engines[i]]() {
+    std::cout << "[MAIN] Seeding market with extreme prices (bid=1, ask=999999)...\n";
+
+    static lockfree::ObjectPool<Order, 100000> seed_pool;
+    static std::vector<lockfree::PooledPtr<Order, 100000>> seed_storage;
+
+    for (auto& e : engines) {
+        // BID at $0.01 (price=1) – extremely low, never matched by any sell order
+        auto bid = seed_pool.acquire();
+        bid->order_id = 1000;
+        bid->side = OrderSide::BUY;
+        bid->price = 1;
+        bid->quantity = 1000;
+        bid->remaining_quantity = 1000;
+        bid->filled_quantity = 0;
+        bid->status = OrderStatus::NEW;
+        std::strncpy(bid->symbol, e->symbol(), 7);
+        e->get_order_book().add_order(bid.get());      // NOTE: populate order book WITHOUT going through matching engine (otherwise rejection)
+        seed_storage.push_back(std::move(bid));
+
+        // ASK at $9999.99 (price=999999) – extremely high, never matched by any buy order
+        auto ask = seed_pool.acquire();
+        ask->order_id = 1001;
+        ask->side = OrderSide::SELL;
+        ask->price = 999999;
+        ask->quantity = 1000;
+        ask->remaining_quantity = 1000;
+        ask->filled_quantity = 0;
+        ask->status = OrderStatus::NEW;
+        std::strncpy(ask->symbol, e->symbol(), 7);
+        e->get_order_book().add_order(ask.get());
+        seed_storage.push_back(std::move(ask));
+    }
+
+    // Verify seed orders are in the book
+    for (auto& e : engines) {
+        std::cout << "[POST-SEED] " << e->symbol()
+                << " bid=" << e->order_book().best_bid()
+                << " ask=" << e->order_book().best_ask() << "\n";
+    }
+
+    // Process seed orders
+    for (auto& e : engines) {
+        for (int i = 0; i < 10; ++i) {
+            e->run_match_cycle();
+        }
+    }
+
+    // Verification
+    for (auto& e : engines) {
+        std::cout << "[POST-SEED] " << e->symbol()
+                  << " seq=" << e->order_book().sequence()
+                  << " bid=" << e->order_book().best_bid()
+                  << " ask=" << e->order_book().best_ask() << "\n";
+    }
+
+    // Worker threads
+    std::vector<std::thread> workers;
+    for (auto& e : engines) {
+        workers.emplace_back([&e]() {
             while (g_running) {
                 e->run_match_cycle();
-
-                // Small sleep cycles if no orders
-                std::this_thread::sleep_for(std::chrono::microseconds(1));
             }
         });
     }
 
-    // Spawn a thread for stats reporting
-    std::thread stats_thread([&]() {
-        while (g_running) {
-            std::this_thread::sleep_for(std::chrono::seconds(5));  // N = 5 seconds (arbitrary)
-            
-            std::cout << "\n=== Trading Engine Stats [" 
-                      << std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())
-                      << "] ===" << std::endl;
-            
-            for (auto& e : engines) {
-                auto stats = e->get_stats();
-                int64_t position = pos_manager.get_position(e->symbol());
-                int64_t realized_pnl = pos_manager.get_realized_pnl(e->symbol());
-                
-                std::cout << "  " << e->symbol() 
-                          << ": matched=" << stats.orders_matched
-                          << ", position=" << position
-                          << ", realized_PnL=$" << (realized_pnl / 100.0)
-                          << ", rejected=" << stats.orders_rejected
-                          << ", partial=" << stats.orders_partially_filled
-                          << std::endl;
-            }
-            
-            std::cout << "  Gateway: total_reports=" << gateway.total_reports_sent() 
-                      << ", total_orders=" << gateway.total_orders_sent() << std::endl;
-        }
-    });
-
-    // Process market data by simulating read from ITCH file
-    // TODO: change to read from constant stream
-    std::thread feed_thread([&]() {
-        // std::cout << "[DEBUG] Parsing mock ITCH file in test_data/NASDAQ_ITCH50_sample.bin..." << std::endl;
-        feed_handler.process_file("test_data/NASDAQ_ITCH50_sample.bin");
-        g_running = false;   // Stop workers when feed ends
-    });
-
-    // Spawn a thread to publish snapshots periodically
-    // TODO: implement once current event loop works
-    /*
+    // Snapshot + bot loop
     std::thread snapshot_thread([&]() {
-        while (g_running) {
-            for (auto& eng : engines) {
+        std::unordered_map<std::string, std::unique_ptr<BookSnapshotManager>> snaps;
+        for (auto& e : engines) {
+            snaps[e->symbol()] = std::make_unique<BookSnapshotManager>(5);
+        }
 
+        static lockfree::ObjectPool<Order, 100000> bot_pool;
+        static std::vector<lockfree::PooledPtr<Order, 100000>> bot_storage;
+
+        while (g_running) {
+            for (auto& e : engines) {
+                auto& sm = *snaps[e->symbol()];
+                sm.update(e->order_book());
+
+                const auto* snap = sm.get_snapshot();
+                if (snap && snap->valid()) {
+                    bot_manager->on_snapshot(*snap);
+                    sm.release_snapshot(snap);
+                }
+
+                // Process bot orders
+                Order tmp;
+                while (bot_manager->pop_order(tmp)) {
+                    auto ptr = bot_pool.acquire();
+                    *ptr = tmp;
+                    ptr->remaining_quantity = ptr->quantity;
+                    ptr->filled_quantity = 0;
+                    ptr->status = OrderStatus::NEW;
+                    for (auto& eng : engines) {
+                        if (strcmp(eng->symbol(), ptr->symbol) == 0) {
+                            eng->on_market_order(ptr.get());
+                            bot_storage.push_back(std::move(ptr));
+                            break;
+                        }
+                    }
+                }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     });
-    */
-    
-    // Wait for shutdown
+
+    // Feed thread (process ITCH file)
+    std::thread feed_thread([&]() {
+        feed_handler.process_file("test_data/NASDAQ_ITCH50_sample.bin");
+    });
+
     feed_thread.join();
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     g_running = false;
 
-    // Fully drain each engine's queue before shutting down workers
+    snapshot_thread.join();
+
+    for (auto& t : workers) t.join();
+
+    // Final drain
     for (auto& e : engines) {
-        e->run_match_cycle();
+        for (int i = 0; i < 10; ++i) {
+            e->run_match_cycle();
+        }
     }
 
-    // Let stats reporting thread print before yielding
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Join stats thread
-    if (stats_thread.joinable()) {
-        stats_thread.join();
-    }
-    
-    // Join worker threads
-    for (auto& t : worker_threads) {
-        if (t.joinable()) t.join();
-    }
-
-    // Print final stats
-    std::cout << "\n=== FINAL STATISTICS ===" << std::endl;
+    std::cout << "\n=== FINAL STATS ===\n";
     for (auto& e : engines) {
-        auto stats = e->get_stats();
-        std::cout << e->symbol() << ": matched=" << stats.orders_matched
-                  << ", rejected=" << stats.orders_rejected
-                  << ", partial=" << stats.orders_partially_filled
-                  << std::endl;
+        auto s = e->get_stats();
+        std::cout << e->symbol()
+                  << " matched=" << s.orders_matched
+                  << " rejected=" << s.orders_rejected
+                  << " partial=" << s.orders_partially_filled
+                  << "\n";
     }
 
     return 0;

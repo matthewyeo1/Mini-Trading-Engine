@@ -100,6 +100,15 @@ void BookSnapshotManager::capture_snapshot(const OrderBook& book,
     snap.mid_price  = (snap.best_ask == INT64_MAX || snap.best_bid == 0)
                           ? 0.0
                           : static_cast<double>(snap.best_bid + snap.best_ask) / 2.0;
+    
+    /*
+    std::cout << "[Capture] " << book.symbol() 
+              << " best_bid=" << snap.best_bid 
+              << " best_ask=" << snap.best_ask 
+              << " bid_levels=" << book.get_bid_levels().size()
+              << " ask_levels=" << book.get_ask_levels().size()
+              << std::endl;
+              */
 
     // Capture bid levels — walk the sorted bid vector
     const auto& bid_levels = book.get_bid_levels();   

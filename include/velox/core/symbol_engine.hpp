@@ -16,8 +16,8 @@ public:
           m_engine(symbol, risk_manager, gateway, position_manager) {}
 
     // Called by Feed Handler thread to push an order from ITCH
-    void on_market_order(Order* order) {
-        m_engine.submit_order(order);
+    bool on_market_order(Order* order) {
+        return m_engine.submit_order(order);
     }
 
     // Called by Matching Engine thread to run matching
@@ -40,6 +40,10 @@ public:
 
     // Get symbol
     const char* symbol() { return m_book.symbol(); }
+
+    OrderBook& get_order_book() {
+        return m_book;
+    }
 
 private:
         OrderBook m_book;
