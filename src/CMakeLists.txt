@@ -17,6 +17,10 @@ add_library(velox_core STATIC
     # Gateway
     gateway/execution_gateway.cpp
     gateway/fix_encoder.cpp
+
+    # Strategy
+    strategy/bot_manager.cpp
+    strategy/bot.cpp
 )
 
 target_link_libraries(velox_core 
