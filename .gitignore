@@ -2,6 +2,7 @@ build/
 build_*/
 market_data/
 cmake-build-*/
+src/old_main.cpp
 .vscode/
 .idea/
 *.swp

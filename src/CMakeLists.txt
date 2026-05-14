@@ -19,8 +19,11 @@ add_library(velox_core STATIC
     gateway/fix_encoder.cpp
 
     # Strategy
-    strategy/bot_manager.cpp
-    strategy/bot.cpp
+    sim/strategy/bot_manager.cpp
+    sim/strategy/bot.cpp
+
+    # Environment
+    sim/env/market_sim.cpp
 )
 
 target_link_libraries(velox_core 
