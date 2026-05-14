@@ -245,4 +245,10 @@ void OrderBook::update_depth() {
     m_ask_depth.store(ask_depth, std::memory_order_release);
 }
 
+// Update Order Book w/o going through Matching Engine
+void OrderBook::set_market_price(int64_t bid, int64_t ask) {
+    m_best_bid.store(bid, std::memory_order_release);
+    m_best_ask.store(ask, std::memory_order_release);
+}
+
 }

@@ -25,20 +25,13 @@ void BotManager::on_snapshot(const BookSnapshot& snapshot) {
 }
 */
 void BotManager::on_snapshot(const BookSnapshot& snapshot) {
-    static int snap_count = 0;
-    if (snap_count++ < 5) {
-        std::cout << "[BotManager] on_snapshot for " << snapshot.symbol 
-                  << " best_bid=" << snapshot.best_bid << std::endl;
-    }
-    
     auto it = m_bots_by_symbol.find(snapshot.symbol);
     if (it == m_bots_by_symbol.end()) {
-        std::cout << "[BotManager] No bots for symbol " << snapshot.symbol << std::endl;
+        // std::cout << "[BotManager] No bots for symbol " << snapshot.symbol << std::endl;
         return;
     }
     
-    std::cout << "[BotManager] Found " << it->second.size() << " bots for " 
-              << snapshot.symbol << std::endl;
+    //std::cout << "[BotManager] Found " << it->second.size() << " bots for " << snapshot.symbol << std::endl;
     
     for (auto* bot : it->second) {
         bot->on_snapshot(snapshot);

@@ -6,6 +6,7 @@
 #include "velox/matching/matching_engine.hpp"
 #include "velox/sim/strategy/bot_manager.hpp"
 #include "velox/sim/strategy/bots.hpp"
+#include "velox/sim/env/market_sim.hpp"
 
 #include <thread>
 #include <vector>
@@ -20,7 +21,11 @@ using namespace velox;
 static std::atomic<bool> g_running{true};
 void signal_handler(int) { g_running = false; }
 
-int main() {
+int main(int argc, char* argv[]) {
+
+    // Parse second argument for desired trading window in minutes (default is 10 minutes)
+    int duration_minutes = (argc > 1) ? std::stoi(argv[1]) : 10;
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
@@ -30,6 +35,9 @@ int main() {
     PositionManager pos_manager;
 
     auto bot_manager = std::make_unique<bot::BotManager>();
+
+    // Initialize simulated market environment
+    env::MarketSimulator simulator(100.0, 10000, 50, 5, 50, 500);
 
     // Gateway workers
     const int num_workers = std::thread::hardware_concurrency();
@@ -46,90 +54,42 @@ int main() {
             s.c_str(), &risk_manager, &gateway, &pos_manager));
     }
 
-    // Bots
+    // Bots for each symbol
+
+    // AAPL
     bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_AAPL", "AAPL", 10000, 100, 500));
     bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_AAPL", "AAPL"));
     bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_AAPL", "AAPL"));
     bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_AAPL", "AAPL"));
     bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_AAPL", "AAPL"));
 
-    // Shared pools
-    static lockfree::ObjectPool<Order, 100000> global_pool;
-    static std::vector<lockfree::PooledPtr<Order, 100000>> order_storage;
+    // MSFT
+    bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_MSFT", "MSFT", 10000, 100, 500));
+    bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_MSFT", "MSFT"));
+    bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_MSFT", "MSFT"));
+    bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_MSFT", "MSFT"));
+    bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_MSFT", "MSFT"));
 
-    // Feed handler routing
-    feed_handler.on_add_order([&](const Order& order) {
-        for (auto& e : engines) {
-            if (strcmp(e->order_book().symbol(), order.symbol) == 0) {
-                auto ptr = global_pool.acquire();
-                *ptr = order;
+    // GOOGL
+    bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_GOOGL", "GOOGL", 10000, 100, 500));
+    bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_GOOGL", "GOOGL"));
+    bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_GOOGL", "GOOGL"));
+    bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_GOOGL", "GOOGL"));
+    bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_GOOGL", "GOOGL"));
 
-                // CRITICAL: normalize state
-                ptr->remaining_quantity = ptr->quantity;
-                ptr->filled_quantity = 0;
-                ptr->status = OrderStatus::NEW;
+    // AMZN
+    bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_AMZN", "AMZN", 10000, 100, 500));
+    bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_AMZN", "AMZN"));
+    bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_AMZN", "AMZN"));
+    bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_AMZN", "AMZN"));
+    bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_AMZN", "AMZN"));
 
-                e->on_market_order(ptr.get());
-                order_storage.push_back(std::move(ptr));
-                break;
-            }
-        }
-    });
-
-    std::cout << "[MAIN] Seeding market with extreme prices (bid=1, ask=999999)...\n";
-
-    static lockfree::ObjectPool<Order, 100000> seed_pool;
-    static std::vector<lockfree::PooledPtr<Order, 100000>> seed_storage;
-
-    for (auto& e : engines) {
-        // BID at $0.01 (price=1) – extremely low, never matched by any sell order
-        auto bid = seed_pool.acquire();
-        bid->order_id = 1000;
-        bid->side = OrderSide::BUY;
-        bid->price = 1;
-        bid->quantity = 1000;
-        bid->remaining_quantity = 1000;
-        bid->filled_quantity = 0;
-        bid->status = OrderStatus::NEW;
-        std::strncpy(bid->symbol, e->symbol(), 7);
-        e->get_order_book().add_order(bid.get());      // NOTE: populate order book WITHOUT going through matching engine (otherwise rejection)
-        seed_storage.push_back(std::move(bid));
-
-        // ASK at $9999.99 (price=999999) – extremely high, never matched by any buy order
-        auto ask = seed_pool.acquire();
-        ask->order_id = 1001;
-        ask->side = OrderSide::SELL;
-        ask->price = 999999;
-        ask->quantity = 1000;
-        ask->remaining_quantity = 1000;
-        ask->filled_quantity = 0;
-        ask->status = OrderStatus::NEW;
-        std::strncpy(ask->symbol, e->symbol(), 7);
-        e->get_order_book().add_order(ask.get());
-        seed_storage.push_back(std::move(ask));
-    }
-
-    // Verify seed orders are in the book
-    for (auto& e : engines) {
-        std::cout << "[POST-SEED] " << e->symbol()
-                << " bid=" << e->order_book().best_bid()
-                << " ask=" << e->order_book().best_ask() << "\n";
-    }
-
-    // Process seed orders
-    for (auto& e : engines) {
-        for (int i = 0; i < 10; ++i) {
-            e->run_match_cycle();
-        }
-    }
-
-    // Verification
-    for (auto& e : engines) {
-        std::cout << "[POST-SEED] " << e->symbol()
-                  << " seq=" << e->order_book().sequence()
-                  << " bid=" << e->order_book().best_bid()
-                  << " ask=" << e->order_book().best_ask() << "\n";
-    }
+    // META
+    bot_manager->register_bot(std::make_unique<bot::MarketMakerBot>("MM_META", "META", 10000, 100, 500));
+    bot_manager->register_bot(std::make_unique<bot::SpreadBot>("Spread_META", "META"));
+    bot_manager->register_bot(std::make_unique<bot::RandomWalkBot>("RW_META", "META"));
+    bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_META", "META"));
+    bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_META", "META"));
 
     // Worker threads
     std::vector<std::thread> workers;
@@ -137,6 +97,7 @@ int main() {
         workers.emplace_back([&e]() {
             while (g_running) {
                 e->run_match_cycle();
+                std::this_thread::yield();
             }
         });
     }
@@ -178,24 +139,62 @@ int main() {
                         }
                     }
                 }
+
+                /* Periodically drain bot_storage of orders already processed (O(n))
+                // Sweep bot storage array
+                auto it = bot_storage.begin();
+
+                while (it != bot_storage.end()) {
+                    if ((*it)->status != OrderStatus::NEW) {
+                        it = bot_storage.erase(it);
+                        // std::cout << "[CLEAN] bot_storage slot returned to pool" << std::endl;
+                    } else {
+                        ++it;
+                    }
+                }
+                */
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+            // Swap processed orders to separate list & clear (faster than O(n))
+            std::vector<lockfree::PooledPtr<Order, 100000>> next_storage;
+            next_storage.reserve(bot_storage.size());
+
+            for (auto& ptr : bot_storage) {
+                if (ptr->status == OrderStatus::NEW || ptr->status == OrderStatus::PARTIAL) {
+                    next_storage.push_back(std::move(ptr));
+                }
+                // Finished orders: ptr destructs, slot returned to pool
+            }
+
+            // Swap back
+            bot_storage = std::move(next_storage);
+
+            if (!g_running) break;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::cout << "Exiting snapshot thread" << std::endl;
+    });
+
+    // Start simulator
+    simulator.start(engines, [](SymbolEngine& engine, int64_t bid, int64_t ask) {
+        static std::unordered_map<std::string, int> counters;
+        int& count = counters[engine.symbol()];
+
+        // Log every 100th tick
+        if (++count % 100 == 0) {
+            std::cout << "============= COUNT " << count << " ==============" << std::endl;
+            std::cout << engine.symbol() << " bid=" << bid << " ask=" << ask << std::endl;
         }
     });
 
-    // Feed thread (process ITCH file)
-    std::thread feed_thread([&]() {
-        feed_handler.process_file("test_data/NASDAQ_ITCH50_sample.bin");
-    });
+    std::cout << "=== MARKET OPEN ===" << std::endl;
+    std::cout << "Trading for " << duration_minutes << " minutes..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::minutes(duration_minutes));
+    std::cout << "=== MARKET CLOSE ===" << std::endl;
 
-    feed_thread.join();
-
-    std::this_thread::sleep_for(std::chrono::seconds(2));
     g_running = false;
-
-    snapshot_thread.join();
-
-    for (auto& t : workers) t.join();
 
     // Final drain
     for (auto& e : engines) {
@@ -204,6 +203,14 @@ int main() {
         }
     }
 
+    simulator.stop();
+
+    if (snapshot_thread.joinable()) {
+        snapshot_thread.join();
+    }
+
+    for (auto& t : workers) t.join();
+
     std::cout << "\n=== FINAL STATS ===\n";
     for (auto& e : engines) {
         auto s = e->get_stats();
@@ -211,6 +218,10 @@ int main() {
                   << " matched=" << s.orders_matched
                   << " rejected=" << s.orders_rejected
                   << " partial=" << s.orders_partially_filled
+                  << " bid="      << e->order_book().best_bid()
+                  << " ask="      << e->order_book().best_ask()
+                  << " bid_depth="<< e->order_book().bid_depth()
+                  << " ask_depth="<< e->order_book().ask_depth()
                   << "\n";
     }
 

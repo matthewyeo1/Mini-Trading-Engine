@@ -45,6 +45,11 @@ public:
         return m_book;
     }
 
+    // Set best bid/ask to Order Book w/o going through Matching Engine
+    void set_market_price(int64_t bid, int64_t ask) {
+        m_book.set_market_price(bid, ask);
+    }
+
 private:
         OrderBook m_book;
         MatchingEngine m_engine;

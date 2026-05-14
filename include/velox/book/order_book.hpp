@@ -20,6 +20,7 @@ public:
     Order* match(Order* incoming_order, std::vector<Fill>& fills);
     const std::vector<PriceLevel*>& get_bid_levels() const { return m_bid_levels; }
     const std::vector<PriceLevel*>& get_ask_levels() const { return m_ask_levels; }
+    void set_market_price(int64_t bid, int64_t ask);
     
     // Market data
     int64_t best_bid() const { return m_best_bid.load(std::memory_order_acquire); }

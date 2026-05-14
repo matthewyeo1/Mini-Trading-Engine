@@ -46,12 +46,14 @@ public:
         , m_quantity(quantity) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
+        /*
         static int call_count = 0;
         if (call_count++ < 3) {
             std::cout << "[MarketMakerBot] on_snapshot called for " << snapshot.symbol 
                     << " best_bid=" << snapshot.best_bid 
                     << " best_ask=" << snapshot.best_ask << std::endl;
         }
+        */
 
         static int update_count = 0;
         
@@ -74,7 +76,7 @@ public:
             std::strncpy(bid.symbol, m_symbol.c_str(), 7);
             submit_order(bid);
             
-            std::cout << "[MarketMaker " << name() << "] Placed BUY at " << bid.price << std::endl;
+            // std::cout << "[MarketMaker " << name() << "] Placed BUY at " << bid.price << std::endl;
         }
         
         // If no asks, place an ask
@@ -89,7 +91,7 @@ public:
             std::strncpy(ask.symbol, m_symbol.c_str(), 7);
             submit_order(ask);
             
-            std::cout << "[MarketMaker " << name() << "] Placed SELL at " << ask.price << std::endl;
+            // std::cout << "[MarketMaker " << name() << "] Placed SELL at " << ask.price << std::endl;
         }
         
         // Gradually adjust base price based on recent trades
@@ -99,8 +101,10 @@ public:
     }
     
     void on_fill(const Order& order, uint32_t fill_qty, int64_t fill_price) override {
+        /*
         std::cout << "[MarketMaker " << name() << "] Filled " << fill_qty 
                   << " @ " << fill_price << std::endl;
+        */
     }
     
 private:
@@ -114,7 +118,7 @@ private:
 class SpreadBot : public TradingBot {
 public:
     SpreadBot(const std::string& name, const std::string& symbol,
-              int64_t threshold = 50, uint32_t quantity = 100)
+              int64_t threshold = 5, uint32_t quantity = 100)
         : TradingBot(name, symbol)
         , m_threshold(threshold)
         , m_quantity(quantity) {}
@@ -175,12 +179,6 @@ public:
         , m_dist(0.0, 1.0) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
-        static int call_count = 0;
-        if (call_count++ < 5) {
-            std::cout << "[RandomWalkBot " << name() << "] Received snapshot, price=" 
-                    << snapshot.mid_price << std::endl;
-        }
-
         double r = m_dist(m_gen);
         
         if (r < m_buy_prob) {
@@ -192,8 +190,9 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
+            /*
             std::cout << "[RandomWalkBot " << name() << "] SUBMITTING BUY order at " 
-                  << order.price << std::endl;
+                  << order.price << std::endl; */
             submit_order(order);
         }
         else if (r < m_buy_prob + m_sell_prob) {
@@ -298,7 +297,7 @@ private:
 class MomentumBot : public TradingBot {
 public:
     MomentumBot(const std::string& name, const std::string& symbol,
-                int64_t momentum_threshold = 50, uint32_t quantity = 100)
+                int64_t momentum_threshold = 15, uint32_t quantity = 100)
         : TradingBot(name, symbol)
         , m_momentum_threshold(momentum_threshold)
         , m_quantity(quantity) {}
