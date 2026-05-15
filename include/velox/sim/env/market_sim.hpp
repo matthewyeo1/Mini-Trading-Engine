@@ -50,13 +50,14 @@ public:
     using PriceCallback = std::function<void(SymbolEngine&, int64_t bid, int64_t ask)>;
 
     MarketSimulator(double tick_intervals_ms = 100.0, 
-                    int64_t initial_price = 10000,
+                    const std::unordered_map<std::string, int64_t>& initial_prices = {},
                     int64_t volatility = 50,
                     int64_t min_spread = 5,
                     int64_t max_spread = 50,
                     uint32_t resting_quantity = 500) :
                 m_tick_interval(std::chrono::milliseconds(static_cast<int>(tick_intervals_ms))),
-                m_initial_price(initial_price),
+                m_initial_prices(initial_prices),
+                m_default_initial_price(10000),
                 m_volatility(volatility),
                 m_min_spread(min_spread),
                 m_max_spread(max_spread),
@@ -76,9 +77,13 @@ public:
     void update_resting_orders(SymbolEngine& engine, int64_t bid_price, int64_t ask_price);
     void clear_resting_orders();
 
+    // Initialize initial price per share
+    int64_t get_initial_price(const std::string& symbol) const;
+
 private:
     std::chrono::milliseconds m_tick_interval;
-    int64_t m_initial_price;
+    std::unordered_map<std::string, int64_t> m_initial_prices;
+    int64_t m_default_initial_price;
     int64_t m_volatility;
     int64_t m_min_spread;
     int64_t m_max_spread;
@@ -104,9 +109,7 @@ private:
     // Per-symbol resting orders
     std::unordered_map<std::string, SymbolOrders> m_symbol_orders;
 
-    
-    
-
+    // Track active orders
     std::unordered_map<std::string, std::unique_ptr<ActiveOrders>> m_active_orders;
 
     // Shared pool for simulator orders

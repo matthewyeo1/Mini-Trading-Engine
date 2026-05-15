@@ -36,9 +36,6 @@ int main(int argc, char* argv[]) {
 
     auto bot_manager = std::make_unique<bot::BotManager>();
 
-    // Initialize simulated market environment
-    env::MarketSimulator simulator(100.0, 10000, 50, 5, 50, 500);
-
     // Gateway workers
     const int num_workers = std::thread::hardware_concurrency();
     for (int i = 0; i < num_workers; ++i) {
@@ -47,6 +44,18 @@ int main(int argc, char* argv[]) {
 
     // Symbols
     std::vector<std::string> symbols = {"AAPL", "MSFT", "GOOGL", "AMZN", "META"};
+
+    // Price per share for each symbol
+    std::unordered_map<std::string, int64_t> initial_prices = {
+        {"AAPL", 17500},   // $175.00
+        {"MSFT", 33000},   // $330.00
+        {"GOOGL", 12500},  // $125.00
+        {"AMZN", 13500},   // $135.00
+        {"META", 30000}    // $300.00
+    };
+
+    // Initialize simulated market environment
+    env::MarketSimulator simulator(100.0, initial_prices, 50, 5, 50, 500);
 
     std::vector<std::unique_ptr<SymbolEngine>> engines;
     for (const auto& s : symbols) {
@@ -102,79 +111,81 @@ int main(int argc, char* argv[]) {
         });
     }
 
-    // Snapshot + bot loop
-    std::thread snapshot_thread([&]() {
-        std::unordered_map<std::string, std::unique_ptr<BookSnapshotManager>> snaps;
-        for (auto& e : engines) {
-            snaps[e->symbol()] = std::make_unique<BookSnapshotManager>(5);
-        }
+    // Snapshot threads: one per symbol, each with its own pool and storage
+    std::vector<std::thread> snapshot_threads;
+    for (auto& e : engines) {
+        snapshot_threads.emplace_back([&, symbol = std::string(e->symbol())]() {
+            BookSnapshotManager sm(5);
+            lockfree::ObjectPool<Order, 100000> bot_pool;
+            std::vector<lockfree::PooledPtr<Order, 100000>> bot_storage;
 
-        static lockfree::ObjectPool<Order, 100000> bot_pool;
-        static std::vector<lockfree::PooledPtr<Order, 100000>> bot_storage;
+            while (g_running) {
+                // Update snapshot for this engine only
+                auto eng_ptr = std::find_if(engines.begin(), engines.end(), [&](const std::unique_ptr<SymbolEngine>& pe){ return symbol == pe->symbol(); });
+                if (eng_ptr == engines.end()) break;
+                auto& eng = *eng_ptr->get();
 
-        while (g_running) {
-            for (auto& e : engines) {
-                auto& sm = *snaps[e->symbol()];
-                sm.update(e->order_book());
-
+                sm.update(eng.order_book());
                 const auto* snap = sm.get_snapshot();
                 if (snap && snap->valid()) {
                     bot_manager->on_snapshot(*snap);
                     sm.release_snapshot(snap);
                 }
 
-                // Process bot orders
+                // Process bot orders for this symbol only
                 Order tmp;
-                while (bot_manager->pop_order(tmp)) {
+                while (bot_manager->pop_order_for_symbol(symbol, tmp)) {
                     auto ptr = bot_pool.acquire();
+                    if (!ptr) {
+                        // Pool exhausted: drop order and continue
+                        continue;
+                    }
                     *ptr = tmp;
                     ptr->remaining_quantity = ptr->quantity;
                     ptr->filled_quantity = 0;
                     ptr->status = OrderStatus::NEW;
-                    for (auto& eng : engines) {
-                        if (strcmp(eng->symbol(), ptr->symbol) == 0) {
-                            eng->on_market_order(ptr.get());
-                            bot_storage.push_back(std::move(ptr));
-                            break;
-                        }
+                    eng.on_market_order(ptr.get());
+                    bot_storage.push_back(std::move(ptr));
+                }
+
+                // Sweep finished orders
+                std::vector<lockfree::PooledPtr<Order, 100000>> next_storage;
+                next_storage.reserve(bot_storage.size());
+                for (auto& ptr : bot_storage) {
+                    if (ptr->status == OrderStatus::NEW || ptr->status == OrderStatus::PARTIAL) {
+                        next_storage.push_back(std::move(ptr));
                     }
                 }
+                bot_storage = std::move(next_storage);
 
-                /* Periodically drain bot_storage of orders already processed (O(n))
-                // Sweep bot storage array
-                auto it = bot_storage.begin();
-
-                while (it != bot_storage.end()) {
-                    if ((*it)->status != OrderStatus::NEW) {
-                        it = bot_storage.erase(it);
-                        // std::cout << "[CLEAN] bot_storage slot returned to pool" << std::endl;
-                    } else {
-                        ++it;
-                    }
-                }
-                */
+                if (!g_running) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-            // Swap processed orders to separate list & clear (faster than O(n))
-            std::vector<lockfree::PooledPtr<Order, 100000>> next_storage;
-            next_storage.reserve(bot_storage.size());
+            std::cout << "Exiting snapshot thread for " << symbol << std::endl;
+        });
+    }
 
-            for (auto& ptr : bot_storage) {
-                if (ptr->status == OrderStatus::NEW || ptr->status == OrderStatus::PARTIAL) {
-                    next_storage.push_back(std::move(ptr));
+    // Cancel processing thread: centralizes cancels and routes to engines
+    std::thread cancel_thread([&]() {
+        while (g_running) {
+            uint64_t cancel_id;
+            while (bot_manager->pop_cancel(cancel_id)) {
+                for (auto& eng : engines) {
+                    if (eng->cancel_order(cancel_id)) break;
                 }
-                // Finished orders: ptr destructs, slot returned to pool
             }
-
-            // Swap back
-            bot_storage = std::move(next_storage);
-
-            if (!g_running) break;
-
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        std::cout << "Exiting snapshot thread" << std::endl;
+        // Drain remaining cancels at shutdown
+        uint64_t cancel_id;
+        while (bot_manager->pop_cancel(cancel_id)) {
+            for (auto& eng : engines) {
+                if (eng->cancel_order(cancel_id)) break;
+            }
+        }
+        std::cout << "Exiting cancel thread" << std::endl;
     });
 
     // Start simulator
@@ -196,20 +207,34 @@ int main(int argc, char* argv[]) {
 
     g_running = false;
 
+    std::cout << "[SHUTDOWN] calling simulator.stop()" << std::endl;
+    simulator.stop();
+    std::cout << "[SHUTDOWN] simulator.stop() returned" << std::endl;
+
+    // Join snapshot threads
+    std::cout << "[SHUTDOWN] joining snapshot threads" << std::endl;
+    for (auto& t : snapshot_threads) {
+        if (t.joinable()) t.join();
+    }
+    std::cout << "[SHUTDOWN] snapshot threads joined" << std::endl;
+
+    // Join cancel thread
+    if (cancel_thread.joinable()) {
+        std::cout << "[SHUTDOWN] joining cancel_thread" << std::endl;
+        cancel_thread.join();
+        std::cout << "[SHUTDOWN] cancel_thread joined" << std::endl;
+    }
+
+    std::cout << "[SHUTDOWN] joining " << workers.size() << " worker threads" << std::endl;
+    for (auto& t : workers) {
+        t.join();
+    }
+    std::cout << "[SHUTDOWN] worker threads joined" << std::endl;
+    
     // Final drain
     for (auto& e : engines) {
-        for (int i = 0; i < 10; ++i) {
-            e->run_match_cycle();
-        }
+        e->drain();
     }
-
-    simulator.stop();
-
-    if (snapshot_thread.joinable()) {
-        snapshot_thread.join();
-    }
-
-    for (auto& t : workers) t.join();
 
     std::cout << "\n=== FINAL STATS ===\n";
     for (auto& e : engines) {
@@ -218,10 +243,6 @@ int main(int argc, char* argv[]) {
                   << " matched=" << s.orders_matched
                   << " rejected=" << s.orders_rejected
                   << " partial=" << s.orders_partially_filled
-                  << " bid="      << e->order_book().best_bid()
-                  << " ask="      << e->order_book().best_ask()
-                  << " bid_depth="<< e->order_book().bid_depth()
-                  << " ask_depth="<< e->order_book().ask_depth()
                   << "\n";
     }
 

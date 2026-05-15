@@ -13,8 +13,11 @@ void MarketSimulator::start(std::vector<std::unique_ptr<SymbolEngine>>& engines,
 
         // Initialize resting orders for each symbol before starting simulation
         for (auto& e : engines) {
-            current_prices[e->symbol()] = m_initial_price;
-            initialize_resting_orders(*e, m_initial_price);
+            int64_t initial_price = get_initial_price(e->symbol());
+            current_prices[e->symbol()] = initial_price;
+            initialize_resting_orders(*e, initial_price);
+
+            std::cout << "[SIM] " << e->symbol() << " initial price = " << initial_price << std::endl;
         }
 
         std::normal_distribution<double> delta_dist(0.0, m_volatility / 3.0);
@@ -176,6 +179,11 @@ void MarketSimulator::update_resting_orders(SymbolEngine& engine, int64_t bid_pr
 void MarketSimulator::clear_resting_orders() {
     m_active_orders.clear();
     m_symbol_orders.clear();
+}
+
+int64_t MarketSimulator::get_initial_price(const std::string& symbol) const {
+    auto it = m_initial_prices.find(symbol);
+    return (it != m_initial_prices.end()) ? it->second : m_default_initial_price;
 }
 
 }

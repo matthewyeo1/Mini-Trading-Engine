@@ -50,6 +50,13 @@ public:
         m_book.set_market_price(bid, ask);
     }
 
+    // Drain each engine
+    void drain() {
+        for (int i = 0; i < 100; ++i) {
+            m_engine.run_match_cycle();
+        }
+    }
+
 private:
         OrderBook m_book;
         MatchingEngine m_engine;

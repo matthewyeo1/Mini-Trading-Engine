@@ -3,6 +3,9 @@
 #include "velox/book/book_snapshot.hpp"
 #include <random>
 
+/*
+* NOTE: Each bot can only have 3 active orders at once to prevent flooding
+*/
 namespace velox {
 namespace bot {
 
@@ -12,7 +15,7 @@ class BotManager;
 class TradingBot {
 public:
     TradingBot(const std::string& name, const std::string& symbol)
-        : m_name(name), m_symbol(symbol) {}
+        : m_name(name), m_symbol(symbol), m_gen(m_rd()), m_dist(0.0, 1.0) {}
 
     virtual ~TradingBot() = default;
     
@@ -27,6 +30,14 @@ public:
     void set_manager(BotManager* manager) { m_manager = manager; }
     
     void submit_order(const Order& order); 
+
+protected:
+    // RNG for stochastic behavior
+    std::random_device m_rd;
+    std::mt19937 m_gen;
+    std::uniform_real_distribution<> m_dist;
+
+    double rand01() { return m_dist(m_gen); }
 
     std::string m_symbol;
 private:
@@ -124,6 +135,12 @@ public:
         , m_quantity(quantity) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
+        // Expire tracked open orders TTL
+        for (auto it = m_open_order_ttls.begin(); it != m_open_order_ttls.end();) {
+            if (--(*it) <= 0) it = m_open_order_ttls.erase(it);
+            else ++it;
+        }
+
         if (m_last_spread == 0) {
             m_last_spread = snapshot.spread;
             return;
@@ -132,7 +149,7 @@ public:
         int64_t spread_change = snapshot.spread - m_last_spread;
         
         if (spread_change > m_threshold) {
-            // Spread widened → buy
+            // Spread widened -> buy
             Order order;
             order.order_id = ++m_order_id;
             order.side = OrderSide::BUY;
@@ -141,10 +158,13 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
         else if (spread_change < -m_threshold) {
-            // Spread narrowed → sell
+            // Spread narrowed -> sell
             Order order;
             order.order_id = ++m_order_id;
             order.side = OrderSide::SELL;
@@ -153,7 +173,10 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
         
         m_last_spread = snapshot.spread;
@@ -164,6 +187,11 @@ private:
     uint32_t m_quantity;
     int64_t m_last_spread = 0;
     uint64_t m_order_id = 10000;
+
+    // Safety limits
+    size_t m_max_open_orders = 3;
+    int m_order_ttl = 1000; // Snapshots until considered expired
+    std::vector<int> m_open_order_ttls;
 };
 
 // Random Walk Bot: random buy/sell decisions
@@ -179,33 +207,59 @@ public:
         , m_dist(0.0, 1.0) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
-        double r = m_dist(m_gen);
-        
+        // Decrement TTLs and remove expired
+        for (auto it = m_open_order_ttls.begin(); it != m_open_order_ttls.end();) {
+            if (--(*it) <= 0) it = m_open_order_ttls.erase(it);
+            else ++it;
+        }
+
+        double r = rand01();
+
+        // Normal limit orders, obey per-bot open-order limit
         if (r < m_buy_prob) {
-            Order order;
-            order.order_id = ++m_order_id;
-            order.side = OrderSide::BUY;
-            order.price = snapshot.best_ask;
-            order.quantity = m_quantity;
-            order.remaining_quantity = m_quantity;
-            order.type = OrderType::LIMIT;
-            std::strncpy(order.symbol, snapshot.symbol, 7);
-            /*
-            std::cout << "[RandomWalkBot " << name() << "] SUBMITTING BUY order at " 
-                  << order.price << std::endl; */
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                Order order;
+                order.order_id = ++m_order_id;
+                order.side = OrderSide::BUY;
+                order.price = snapshot.best_ask;
+                order.quantity = m_quantity;
+                order.remaining_quantity = m_quantity;
+                order.type = OrderType::LIMIT;
+                std::strncpy(order.symbol, snapshot.symbol, 7);
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
         else if (r < m_buy_prob + m_sell_prob) {
-            Order order;
-            order.order_id = ++m_order_id;
-            order.side = OrderSide::SELL;
-            order.price = snapshot.best_bid;
-            order.quantity = m_quantity;
-            order.remaining_quantity = m_quantity;
-            order.type = OrderType::LIMIT;
-            std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                Order order;
+                order.order_id = ++m_order_id;
+                order.side = OrderSide::SELL;
+                order.price = snapshot.best_bid;
+                order.quantity = m_quantity;
+                order.remaining_quantity = m_quantity;
+                order.type = OrderType::LIMIT;
+                std::strncpy(order.symbol, snapshot.symbol, 7);
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
+
+        // Rare spike: large market order with cooldown
+        else if (rand01() < m_spike_prob && m_spike_cooldown == 0 && m_open_order_ttls.empty()) {
+            Order spike;
+            spike.order_id = ++m_order_id;
+            spike.side = (rand01() < 0.5) ? OrderSide::BUY : OrderSide::SELL;
+            spike.type = OrderType::MARKET;
+            spike.quantity = m_quantity * (3 + (m_gen() % 5));
+            spike.remaining_quantity = spike.quantity;
+            std::strncpy(spike.symbol, snapshot.symbol, 7);
+            submit_order(spike);
+            m_open_order_ttls.push_back(m_spike_ttl);
+            m_spike_cooldown = m_spike_cooldown_default;
+        }
+
+        if (m_spike_cooldown > 0) --m_spike_cooldown;
     }
     
 private:
@@ -216,6 +270,15 @@ private:
     std::mt19937 m_gen;
     std::uniform_real_distribution<> m_dist;
     uint64_t m_order_id = 20000;
+    // Safety controls
+    size_t m_max_open_orders = 3;
+    int m_order_ttl = 1000; // snapshots until considered expired
+    std::vector<int> m_open_order_ttls;
+    // Spike controls
+    double m_spike_prob = 0.01;
+    int m_spike_cooldown = 0;
+    int m_spike_cooldown_default = 2000;
+    int m_spike_ttl = 1500;
 };
 
 // Mean Reversion Bot: trades when price deviates from mean
@@ -229,6 +292,12 @@ public:
         , m_quantity(quantity) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
+        // expire tracked open orders TTL
+        for (auto it = m_open_order_ttls.begin(); it != m_open_order_ttls.end();) {
+            if (--(*it) <= 0) it = m_open_order_ttls.erase(it);
+            else ++it;
+        }
+
         // Record price
         m_prices.push_back(snapshot.mid_price);
         if (m_prices.size() > m_lookback) {
@@ -254,7 +323,10 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
         else if (z_score < -m_z_threshold) {
             // Price too low → buy
@@ -266,7 +338,10 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
     }
     
@@ -291,6 +366,10 @@ private:
     uint32_t m_quantity;
     std::vector<double> m_prices;
     uint64_t m_order_id = 30000;
+    // Safety controls
+    size_t m_max_open_orders = 3;
+    int m_order_ttl = 1000;
+    std::vector<int> m_open_order_ttls;
 };
 
 // Momentum Bot: Trades based on price momentum
@@ -303,6 +382,12 @@ public:
         , m_quantity(quantity) {}
     
     void on_snapshot(const BookSnapshot& snapshot) override {
+        // Expire TTLs for tracked open orders
+        for (auto it = m_open_order_ttls.begin(); it != m_open_order_ttls.end();) {
+            if (--(*it) <= 0) it = m_open_order_ttls.erase(it);
+            else ++it;
+        }
+
         if (m_prev_price == 0) {
             m_prev_price = snapshot.mid_price;
             return;
@@ -321,7 +406,10 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
         else if (change < -m_momentum_threshold) {
             // Downward momentum → sell
@@ -333,7 +421,10 @@ public:
             order.remaining_quantity = m_quantity;
             order.type = OrderType::LIMIT;
             std::strncpy(order.symbol, snapshot.symbol, 7);
-            submit_order(order);
+            if (m_open_order_ttls.size() < m_max_open_orders) {
+                submit_order(order);
+                m_open_order_ttls.push_back(m_order_ttl);
+            }
         }
     }
     
@@ -342,6 +433,10 @@ private:
     uint32_t m_quantity;
     int64_t m_prev_price = 0;
     uint64_t m_order_id = 40000;
+    // Safety controls
+    size_t m_max_open_orders = 3;
+    int m_order_ttl = 1000;
+    std::vector<int> m_open_order_ttls;
 };
 
 } 
