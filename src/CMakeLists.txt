@@ -26,14 +26,13 @@ add_library(velox_core STATIC
     sim/env/market_sim.cpp
 )
 
-target_link_libraries(velox_core 
+target_link_libraries(velox_core
     PUBLIC
-        whirlpool    
+        whirlpool::whirlpool
 )
 
 target_include_directories(velox_core PUBLIC 
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include  
+    ${CMAKE_SOURCE_DIR}/include 
 )
 
 add_executable(velox_trading_engine main.cpp)
@@ -44,5 +43,4 @@ target_link_libraries(velox_trading_engine
 
 target_include_directories(velox_trading_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
 )

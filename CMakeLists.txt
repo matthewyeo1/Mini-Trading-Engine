@@ -54,7 +54,6 @@ endif()
 
 # Include directories
 include_directories(include)
-include_directories(third_party/whirlpool/include)
 
 # GoogleTest (must be added before any targets that use it)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
@@ -70,21 +69,8 @@ else()
     FetchContent_MakeAvailable(googletest)
 endif()
 
-# Temporarily disable benchmarks for whirlpool only
-set(_SAVED_BUILD_BENCHMARKS ${BUILD_BENCHMARKS})
-set(BUILD_BENCHMARKS OFF)
-if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/whirlpool/CMakeLists.txt")
-    add_subdirectory(third_party/whirlpool)
-else()
-    # Fetch whirlpool if submodule not present (fallback)
-    FetchContent_Declare(
-        whirlpool
-        GIT_REPOSITORY https://github.com/matthewyeo1/whirl-pool.git
-        GIT_TAG main
-    )
-    FetchContent_MakeAvailable(whirlpool)
-endif()
-set(BUILD_BENCHMARKS ${_SAVED_BUILD_BENCHMARKS})
+# Find installed Whirlpool package
+find_package(whirlpool CONFIG REQUIRED)
 
 # Subdirectories
 add_subdirectory(src)

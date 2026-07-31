@@ -104,6 +104,11 @@ cmake -B build -DBUILD_BENCHMARKS=ON -DBUILD_TESTS=ON
 cmake --build build --config Release
 ```
 
+### Run Trading Engine
+```bash
+./build/src/Release/velox_trading_engine.exe
+```
+
 ### Run Tests
 
 ```bash
