@@ -14,14 +14,12 @@ add_executable(velox_tests
 
 target_link_libraries(velox_tests 
     velox_core 
-    whirlpool
     gtest
     gtest_main      
 )
 
 target_include_directories(velox_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
     ${CMAKE_SOURCE_DIR}/third_party/googletest/googletest/include  
 )
 
