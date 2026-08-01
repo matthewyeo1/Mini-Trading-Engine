@@ -100,7 +100,12 @@ mini-trading-engine/
 ```bash
 # With tests and benchmarks
 Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-cmake -B build -DBUILD_BENCHMARKS=ON -DBUILD_TESTS=ON
+
+cmake -S . -B build `
+  -DCMAKE_PREFIX_PATH="C:/Users/matthew/whirlpool-install" `
+  -DBUILD_BENCHMARKS=ON `
+  -DBUILD_TESTS=ON
+
 cmake --build build --config Release
 ```
 
