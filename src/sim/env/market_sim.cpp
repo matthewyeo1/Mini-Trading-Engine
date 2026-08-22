@@ -17,7 +17,7 @@ void MarketSimulator::start(std::vector<std::unique_ptr<SymbolEngine>>& engines,
             current_prices[e->symbol()] = initial_price;
             initialize_resting_orders(*e, initial_price);
 
-            std::cout << "[SIM] " << e->symbol() << " initial price = " << initial_price << std::endl;
+            std::cout << e->symbol() << " starting at price = " << initial_price << std::endl;
         }
 
         std::normal_distribution<double> delta_dist(0.0, m_volatility / 3.0);

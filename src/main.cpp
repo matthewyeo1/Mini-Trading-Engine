@@ -7,6 +7,7 @@
 #include "velox/sim/strategy/bot_manager.hpp"
 #include "velox/sim/strategy/bots.hpp"
 #include "velox/sim/env/market_sim.hpp"
+#include "velox/sim/env/market_state_store.hpp"
 
 #include <thread>
 #include <vector>
@@ -15,6 +16,8 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <mutex>
 
 using namespace velox;
 
@@ -46,13 +49,20 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> symbols = {"AAPL", "MSFT", "GOOGL", "AMZN", "META"};
 
     // Price per share for each symbol
-    std::unordered_map<std::string, int64_t> initial_prices = {
+    const std::unordered_map<std::string, int64_t> default_initial_prices = {
         {"AAPL", 17500},   // $175.00
         {"MSFT", 33000},   // $330.00
         {"GOOGL", 12500},  // $125.00
         {"AMZN", 13500},   // $135.00
         {"META", 30000}    // $300.00
     };
+
+    const std::filesystem::path state_file_path = std::filesystem::current_path() / "market_state.txt";
+    std::unordered_map<std::string, int64_t> initial_prices =
+        velox::env::read_market_state(state_file_path.string(), symbols, default_initial_prices);
+
+    std::unordered_map<std::string, int64_t> last_updated_prices = initial_prices;
+    std::mutex last_updated_prices_mutex;
 
     // Initialize simulated market environment
     env::MarketSimulator simulator(100.0, initial_prices, 50, 5, 50, 500);
@@ -189,7 +199,7 @@ int main(int argc, char* argv[]) {
     });
 
     // Start simulator
-    simulator.start(engines, [](SymbolEngine& engine, int64_t bid, int64_t ask) {
+    simulator.start(engines, [&](SymbolEngine& engine, int64_t bid, int64_t ask) {
         static std::unordered_map<std::string, int> counters;
         int& count = counters[engine.symbol()];
 
@@ -198,18 +208,35 @@ int main(int argc, char* argv[]) {
             std::cout << "============= COUNT " << count << " ==============" << std::endl;
             std::cout << engine.symbol() << " bid=" << bid << " ask=" << ask << std::endl;
         }
+
+        const int64_t mid_price = (bid + ask) / 2;
+        {
+            std::lock_guard<std::mutex> lock(last_updated_prices_mutex);
+            last_updated_prices[engine.symbol()] = mid_price;
+            velox::env::write_market_state(state_file_path.string(), last_updated_prices);
+        }
     });
 
     std::cout << "=== MARKET OPEN ===" << std::endl;
     std::cout << "Trading for " << duration_minutes << " minutes..." << std::endl;
-    const auto trading_deadline =
-        std::chrono::steady_clock::now() + std::chrono::minutes(duration_minutes);
-    while (g_running && std::chrono::steady_clock::now() < trading_deadline) {
+    const auto market_close_time = std::chrono::steady_clock::now() + std::chrono::minutes(duration_minutes);
+    while (g_running && std::chrono::steady_clock::now() < market_close_time) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     std::cout << "=== MARKET CLOSE ===" << std::endl;
 
     g_running = false;
+
+    {
+        std::lock_guard<std::mutex> lock(last_updated_prices_mutex);
+        for (const auto& symbol : symbols) {
+            if (last_updated_prices.find(symbol) == last_updated_prices.end()) {
+                last_updated_prices[symbol] = initial_prices[symbol];
+            }
+        }
+        velox::env::write_market_state(state_file_path.string(), last_updated_prices);
+    }
+    std::cout << "[SHUTDOWN] persisted symbol values to " << state_file_path << std::endl;
 
     std::cout << "[SHUTDOWN] calling simulator.stop()" << std::endl;
     simulator.stop();
