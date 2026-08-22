@@ -18,6 +18,11 @@
 #include <cstring>
 #include <filesystem>
 #include <mutex>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#include <emmintrin.h>
 
 using namespace velox;
 
@@ -110,14 +115,50 @@ int main(int argc, char* argv[]) {
     bot_manager->register_bot(std::make_unique<bot::MeanReversionBot>("MR_META", "META"));
     bot_manager->register_bot(std::make_unique<bot::MomentumBot>("Mom_META", "META"));
 
-    // Worker threads
+    // Worker threads (one per engine) with optional core-pinning and a hybrid spin/backoff loop
     std::vector<std::thread> workers;
-    for (auto& e : engines) {
-        workers.emplace_back([&e]() {
+    workers.reserve(engines.size());
+
+    auto pin_current_thread = [&](int core) {
+#ifdef _WIN32
+        HANDLE th = GetCurrentThread();
+        DWORD_PTR mask = (DWORD_PTR)1 << core;
+        SetThreadAffinityMask(th, mask);
+        // Avoid raising worker thread priority here; keep default to prevent starving other threads
+#else
+        (void)core;
+#endif
+    };
+
+    for (size_t i = 0; i < engines.size(); ++i) {
+        workers.emplace_back([&, i]() {
+#ifdef _WIN32
+            int core = static_cast<int>(i % std::thread::hardware_concurrency());
+            pin_current_thread(core);
+#endif
+            auto& eng = *engines[i];
+            uint64_t prev_matches = eng.get_stats().orders_matched;
+            const int spin_loops = 200;
+
             while (g_running) {
-                e->run_match_cycle();
-                std::this_thread::yield();
+                eng.run_match_cycle();
+
+                uint64_t now_matches = eng.get_stats().orders_matched;
+                if (now_matches != prev_matches) { prev_matches = now_matches; continue; }
+
+                for (int s = 0; s < spin_loops; ++s) {
+                    _mm_pause();
+                    eng.run_match_cycle();
+                    now_matches = eng.get_stats().orders_matched;
+                    if (now_matches != prev_matches) { prev_matches = now_matches; break; }
+                }
+
+                if (now_matches == prev_matches) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(50));
+                }
             }
+
+            for (int d = 0; d < 100; ++d) eng.run_match_cycle();
         });
     }
 
