@@ -43,3 +43,4 @@ test_results/
 vcpkg_installed/
 vcpkg/
 .cache/
+market_state.txt
