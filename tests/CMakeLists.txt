@@ -10,6 +10,7 @@ add_executable(velox_tests
     test_book_snapshot.cpp
     test_position_manager.cpp
     test_integration.cpp
+    test_market_state_store.cpp
 )
 
 target_link_libraries(velox_tests 
