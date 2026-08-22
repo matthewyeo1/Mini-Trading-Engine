@@ -202,7 +202,11 @@ int main(int argc, char* argv[]) {
 
     std::cout << "=== MARKET OPEN ===" << std::endl;
     std::cout << "Trading for " << duration_minutes << " minutes..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::minutes(duration_minutes));
+    const auto trading_deadline =
+        std::chrono::steady_clock::now() + std::chrono::minutes(duration_minutes);
+    while (g_running && std::chrono::steady_clock::now() < trading_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     std::cout << "=== MARKET CLOSE ===" << std::endl;
 
     g_running = false;

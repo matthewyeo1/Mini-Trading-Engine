@@ -28,7 +28,6 @@ foreach(bench_target
     )
     target_include_directories(${bench_target} PRIVATE
         ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/third_party/whirlpool/include
     )
     if(WIN32)
         target_link_libraries(${bench_target} ws2_32 shlwapi)
