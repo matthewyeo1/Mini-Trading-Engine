@@ -152,8 +152,10 @@ All measurements taken on a pinned core with frequency scaling disabled. Latency
 |---|---|
 | Match latency | ~8μs |
 | Order throughput | ~70,000 orders/s |
-| Full pipeline | 1.9ms |
+| Full pipeline | 1.1ms |
 | ITCH parse rate | 15ns/message |
+
+NOTE: full pipeline latency is hardware dependent 
 
 ### Key Design Considerations
 

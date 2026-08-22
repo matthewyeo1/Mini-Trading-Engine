@@ -210,11 +210,9 @@ int main(int argc, char* argv[]) {
         }
 
         const int64_t mid_price = (bid + ask) / 2;
-        {
-            std::lock_guard<std::mutex> lock(last_updated_prices_mutex);
-            last_updated_prices[engine.symbol()] = mid_price;
-            velox::env::write_market_state(state_file_path.string(), last_updated_prices);
-        }
+        
+        // Update in-memory state to avoid file reads/writes in hot path
+        last_updated_prices[engine.symbol()] = mid_price;
     });
 
     std::cout << "=== MARKET OPEN ===" << std::endl;
